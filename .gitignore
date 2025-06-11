@@ -1,0 +1,12 @@
+*.pyc
+*.jpg
+*.log
+*.bash
+
+**/check_*
+data/*
+logs/*
+cache_files/*
+
+SpatialBot3B
+recognize_anything
