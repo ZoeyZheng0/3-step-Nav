@@ -56,5 +56,5 @@ DATASET:
   SPLIT: val_unseen
   DATA_PATH: data/datasets/R2R_VLNCE_v1-2_preprocessed/{split}/OpenNav_R2R-CE_100_bertidx.json.gz
   SCENES_DIR: data/scene_datasets/
-  EPISODES_TO_LOAD: 100 # Change this to run more episodes
+  EPISODES_TO_LOAD: 1 # Change this to run more episodes
 
