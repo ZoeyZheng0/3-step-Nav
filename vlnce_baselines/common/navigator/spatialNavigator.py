@@ -81,7 +81,6 @@ class Open_Nav():
                                                                            actions, landmarks, history_traj, estimation, observation),
                                                   num_output=3)
             for decision_reasoning in batch_responses:
-                logger.info(decision_reasoning)
                 if "Prediction:" not in decision_reasoning:
                     continue
                 logger.info(f"================retry id {i} in pred_vp==========")
