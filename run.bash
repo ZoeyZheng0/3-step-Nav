@@ -1,6 +1,6 @@
 #!/bin/bash
 
-episodes_to_load=1
+episodes_to_load=100
 
 flag="--exp_name debug
       --exp-config run_OpenNav.yaml
