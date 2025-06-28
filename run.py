@@ -25,12 +25,6 @@ def main():
         required=True,
         help="path to config yaml containing info about experiment",
     )
-    parser.add_argument(
-        "opts",
-        default=None,
-        nargs=argparse.REMAINDER,
-        help="Modify config options from command line",
-    )
     parser.add_argument('--local_rank', type=int, default=0, help="local gpu id")
     parser.add_argument(
         "--llm",
@@ -44,12 +38,42 @@ def main():
         required=True,
         help="API key for accessing the LLM service",
     )
+    parser.add_argument(
+        "--episodes_to_load",
+        type=int,
+        default=None,
+        help="Number of episodes to load (overrides config)",
+    )
+    parser.add_argument(
+        "opts",
+        default=None,
+        nargs=argparse.REMAINDER,
+        help="Modify config options from command line",
+    )
+    
     args = parser.parse_args()
+    
+    # Filter out our custom arguments from opts to avoid config errors
+    filtered_opts = []
+    if args.opts:
+        i = 0
+        while i < len(args.opts):
+            if args.opts[i] == '--episodes_to_load':
+                # Skip this argument and its value
+                i += 2
+            else:
+                filtered_opts.append(args.opts[i])
+                i += 1
+    
+    # Create a new args object with filtered opts
+    args.opts = filtered_opts
+    
     run_exp(**vars(args))
     
 def run_exp(exp_name: str, exp_config: str, 
             opts=None, local_rank=None,
-            llm: str = None, api_key: str = None, episodes_to_load: int = 0) -> None:
+            llm: str = None, api_key: str = None, 
+            episodes_to_load: int = None) -> None:
     r"""Runs experiment given mode and config
 
     Args:
@@ -58,6 +82,7 @@ def run_exp(exp_name: str, exp_config: str,
         opts: list of strings of additional config options.
         llm: The LLM model to be used (e.g., gpt-4o-2024-08-06).
         api_key: API key for accessing the LLM service.
+        episodes_to_load: Number of episodes to load.
     Returns:
         None.
     """
@@ -78,6 +103,10 @@ def run_exp(exp_name: str, exp_config: str,
         config.LLM = llm
     if api_key is not None:
         config.API_KEY = api_key
+    
+    # Override config with command-line arguments if provided
+    if episodes_to_load is not None:
+        config.TASK_CONFIG.DATASET.EPISODES_TO_LOAD = episodes_to_load
 
     config.freeze()
     
