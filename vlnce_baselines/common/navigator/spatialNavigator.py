@@ -76,10 +76,11 @@ class Open_Nav():
         break_flag = True
         for i in range(2): # retry twice
             effective_prediction, thought_list = [], []
-            batch_responses = self.llm.gpt_infer(NAVIGATOR['system'], 
-                                                  NAVIGATOR['user'].format(observe_dict.keys(), current_step, instruction,
-                                                                           actions, landmarks, history_traj, estimation, observation),
-                                                  num_output=3)
+            # batch_responses = self.llm.gpt_infer(NAVIGATOR['system'], 
+            #                                       NAVIGATOR['user'].format(observe_dict.keys(), current_step, instruction,
+            #                                                                actions, landmarks, history_traj, estimation, observation),
+            #                                       num_output=3)
+            batch_responses = self.llm.gpt_infer(MAPGPT_NAVIGATOR['system'], MAPGPT_NAVIGATOR['user'], num_output=3)
             for decision_reasoning in batch_responses:
                 if "Prediction:" not in decision_reasoning:
                     continue
