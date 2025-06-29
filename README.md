@@ -1,5 +1,5 @@
 ## Inference
 
 ```bash
-bash run.bash
+./run.sh
 ```

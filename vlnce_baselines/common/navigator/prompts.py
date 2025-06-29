@@ -75,21 +75,29 @@ NAVIGATOR = {
 }
 
 # MapGPT Navigator
-# TODO: Modify requirements
+# TODO: Modify 'History' in system prompt with landmarks, 'Seeing an object in the image......'
+# TODO: Modify 'Action options' in system prompt with landmarks and backtrack option
+# important TODO: MapGPT need to send the images in the trajectory, while right now we only save the images in the current action space
 MAPGPT_NAVIGATOR = {
     'system': "You are an embodied robot that navigates in the real world. \
             You need to explore between some places marked with IDs and ultimately find the destination to stop. \
             At each step, a series of images corresponding to the places you have explored and have observed will be provided to you. \
             'Instruction' is a global, step-by-step detailed guidance, but you might have already executed some of the commands. You need to carefully discern the commands that have not been executed yet. \
-            'History' represents the places you have explored in previous steps along with their corresponding images. It may include the correct landmarks mentioned in the 'Instruction' as well as some past erroneous explorations. \
-            'Previous Planning' records previous long-term multi-step planning info that you can refer to now. \
-            'Action options' are some actions that you can take at this step. \
-            For each provided image of the places, you should combine the 'Instruction' and carefully examine the relevant information, such as scene descriptions, landmarks, and objects. You need to align 'Instruction' with 'History' (including corresponding images) to estimate your instruction execution progress and refer to 'Map' for path planning. Check the Place IDs in the 'History' and 'Trajectory', avoiding repeated exploration that leads to getting stuck in a loop, unless it is necessary to backtrack to a specific place. \
+            'Previous Planning' records prior multi-step navigation strategies. Your goal is to refine and update this plan rather than discard it unless a critical mistake has occurred. \
+            'History' represents the places you have already explored along with their corresponding images. It includes both correct movements according to the Instruction and some past mistaken explorations. You must use History to verify whether an instruction step has already been completed. \
+            'Action options' are the set of available actions at this step. Each actions corresponds to a place, and an image with its unique image ID. \
+            For each provided image of the places, you should combine the 'Instruction' and carefully examine the relevant information, such as scene descriptions, landmarks, and objects. You need to align 'Instruction' with 'History' (including corresponding images) to estimate your instruction execution progress and refer to 'Map' for path planning. Check the Place IDs in the 'History', avoiding repeated exploration that leads to getting stuck in a loop, unless it is necessary to backtrack to a specific place. \
             If you can already see the destination, estimate the distance between you and it. If the distance is far, continue moving and try to stop within 1 meter of the destination. \
-            Your answer must include four parts: 'Thought', 'Distance', 'New Planning', and 'Action'. You need to combine 'Instruction', 'Trajectory', 'Map', 'Supplementary Info', your past 'History', 'Previous Planning', 'Action options', and the provided images to think about what to do next and why, and complete your thinking into 'Thought'. \
-            Based on your 'Map', 'Previous Planning' and current 'Thought', you also need to update your new multi-step path planning to 'New Planning'. \
-            At the end of your output, you must provide a single capital letter in the 'Action options' that corresponds to the action you have decided to take, and place only the letter into 'Action', such as \"Action: A\".",
-    'user': None
+            Your answer must include four parts: 'Thought', 'Distance', 'New Planning', and 'Prediction'. You need to combine 'Instruction', 'Previous Planning', your past 'History', 'Action options', and the provided images to think about what to do next and why, and complete your thinking into 'Thought'. \
+            Based on your 'Previous Planning' and current 'Thought', you also need to update your new multi-step path planning to 'New Planning'. \
+            At the end of your output, you must provide a number in the 'Action options' that corresponds to the Image ID you have decided to take, and place only the number into 'Prediction', such as \"Prediction:2\". \
+            Your decision is very important, must make it very carefully. \
+            You need to double check the output in \"Prediction:\". The output must be in the Candidate Image IDs without any other words.",
+    'user': "Candidate Image IDs List: [{}] \
+            Instruction: {} \
+            Previous Planning: {} \
+            History: {} \
+            Action options: {}"
 }
 
 # Thought Fusion
