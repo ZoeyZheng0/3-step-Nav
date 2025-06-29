@@ -25,7 +25,8 @@ from recognize_anything.ram.models import ram
 from recognize_anything.ram import inference_ram
 from recognize_anything.ram import get_transform
 
-
+import base64
+import io
 
 class llmClient:
     def __init__(self, model_type = '', api_key=None, base_url=None):
@@ -69,7 +70,7 @@ class llmClient:
             "model": self.model,
             "messages": messages,
             "temperature": 0
-        }
+        }       
         
         if num_output == 1:
             chat_response = self._completion_with_backoff(**request_params)
@@ -82,7 +83,84 @@ class llmClient:
                 responses.append(chat_response.choices[0].message.content)
             return responses
 
-    
+    def gpt_infer_with_images(self, system_prompt, user_prompt, images, num_output=1):
+        user_content = []
+        user_content.append(
+            {
+            "type": "text",
+            "text": user_prompt
+            }
+        )  
+
+        # Add images to the prompt
+        for i, image_dict in images.items():
+            if image_dict is not None:
+                print(f'Append image index: {i}')
+                user_content.append(
+                    {
+                        "type": "text",
+                        "text": f"Image {i}:"
+                    },
+                )
+
+                try:
+                    # Create a pure white image for testing
+                    from PIL import Image
+                    white_image = Image.new('RGB', (10, 10), (255, 255, 255))
+                    
+                    with io.BytesIO() as buf: 
+                        image_dict['rgb'].save(buf, format='JPEG')
+                        # white_image.save(buf, format='JPEG')
+                        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+                    image_message = {
+                             "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}",
+                                "detail": "low"
+                            }
+                        }
+                    user_content.append(image_message)
+                except Exception as e:
+                    print(f"Error processing image {i}: {e}")
+                    # Skip this image if there's an error
+                    continue
+            # break after first image for debugging
+            break
+                        
+        # messages = [
+        #     {"role": "system", "content": system_prompt},
+        #     {"role": "user", "content": user_content}
+        # ]
+        img_data_uri = f"data:image/jpeg;base64,{image_base64}"
+        messages = [
+            {"role": "system",
+             "content": system_prompt
+            },
+            {"role": "user", "content": [
+                {"type": "text",      "text": "Describe the image"},
+                {"type": "image_url", "image_url": {"url": img_data_uri}}
+            ]}
+        ]
+        
+        request_params = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0
+        }
+
+        if num_output == 1:
+            chat_response = self._completion_with_backoff(**request_params)
+            answer = chat_response.choices[0].message.content
+            return answer
+        else:
+            responses = []
+            for _ in range(num_output):
+                chat_response = self._completion_with_backoff(**request_params)
+                responses.append(chat_response.choices[0].message.content)
+            return responses
+
+
 class spatialClient:
     def __init__(self, device):
         self.device = device

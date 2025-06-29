@@ -275,13 +275,16 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 f"stats_ckpt_{config.TASK_CONFIG.DATASET.SPLIT}.json",
             )
             if os.path.exists(fname):
-                print(f"skipping -- evaluation exists. File path: {fname}")
-                user_input = input("Do you want to overwrite the results? (yes/no): ").strip().lower()
-                if user_input != "yes":
-                    print("Skipping evaluation.")
-                    return
-                else:
+                if config.EVAL.OVERWRITE_RESULTS:
                     print("Overwriting previous results...")
+                else:
+                    print(f"skipping -- evaluation exists. File path: {fname}")
+                    user_input = input("Do you want to overwrite the results? (yes/no): ").strip().lower()
+                    if user_input != "yes":
+                        print("Skipping evaluation.")
+                        return
+                    else:
+                        print("Overwriting previous results...")
                 
 
         envs = construct_envs(
@@ -420,7 +423,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-
+                
                 nav_logger.info("========== Thought ==========")
                 fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)
                 
