@@ -381,20 +381,36 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             # ==========Navigator start==========
             nav_logger.info(f"==================== The current episode id is {current_episodes[0].episode_id} ====================")
             nav_logger.info("Instruction: "+instruction)
-            actions, landmarks = "", ""
+            actions, landmark_list = "", []
             if instruction not in actions_cache.keys():
                 actions = navigator.get_actions(instruction)
-                landmarks = navigator.get_landmarks(actions)
-                actions_cache[instruction] = {"actions": actions, "landmarks": landmarks}
+                action_list = actions.split("\n")
+                # Extract landmarks for each action individually
+                landmark_list = []
+                for i, action in enumerate(action_list):
+                    if action.strip():  # Skip empty actions
+                        landmarks = navigator.get_landmarks(action)
+                        landmark_list.append(landmarks.replace("- ", "").split("\n"))
+                    else:
+                        landmark_list.append("")
+                        nav_logger.info(f"Action {i} is empty, skipping landmark extraction")
+                actions_cache[instruction] = {"actions": actions, "landmark_list": landmark_list}
                 with open(actions_cache_path, "w", encoding="utf-8") as f2:
                     json.dump(actions_cache, f2, indent=2)
             else:
                 actions = actions_cache[instruction]["actions"]
-                landmarks = actions_cache[instruction]["landmarks"]
-            nav_logger.info("Actions: "+actions)
-            nav_logger.info("Landmarks: " + landmarks)
+                landmark_list = actions_cache[instruction]["landmark_list"]
+                nav_logger.info("Loading actions and landmarks from cache")
+
+            action_list = actions.split("\n")
+            nav_logger.info("Sub-instructions: "+str(action_list))
+            nav_logger.info("Landmarks: " + str(landmark_list))
             
-            step_length = 6 if len(actions.split("\n")) <= 6 else 8 
+            step_length = 6 if len(action_list) <= 6 else 8
+            current_action_idx = 0
+            if current_action_idx < len(action_list):
+                nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
+                                +"Current landmarks: "+str(landmark_list[current_action_idx]))
 
             stop_flag = False
             current_step += 1
@@ -419,11 +435,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
             if not stop_flag:
                 nav_logger.info("========== Estimate Completion Progress ==========")
-                estimation = navigator.estimate_completion(nav_logger, actions, landmarks, history_traj)
+                current_action = action_list[current_action_idx] if current_action_idx < len(action_list) else ""
+                current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else ""
+                # Pass current_action as the instruction to estimate, and current_landmarks as landmarks
+                estimation = navigator.estimate_completion(nav_logger, current_action, current_landmarks, history_traj)
                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict, images_dict)
+                predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, current_landmarks, history_traj, estimation, observation, observe_dict, images_dict)
                 
                 nav_logger.info("========== Thought ==========")
                 fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)

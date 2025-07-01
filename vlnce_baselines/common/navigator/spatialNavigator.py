@@ -60,12 +60,12 @@ class Open_Nav():
     
     def estimate_completion(self, logger, actions, landmarks, history_traj):
         response = self.llm.gpt_infer(COMPLETION_ESTIMATION['system'], COMPLETION_ESTIMATION['user'].format(history_traj, landmarks, actions))
-        if "Executed Actions" in response:
-            logger.info("Executed Actions " + response)
-            if "Executed Actions:" in response:
-                return response.split("Executed Actions:")[1].strip()
+        if "Decision" in response:
+            logger.info("Decision " + response)
+            if "Decision:" in response:
+                return response.split("Decision:")[1].strip()
             else:
-                return response.split("Executed Actions")[1].strip()
+                return response.split("Decision")[1].strip()
         else:
             return response
     
