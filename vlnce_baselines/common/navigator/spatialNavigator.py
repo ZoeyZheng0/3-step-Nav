@@ -84,7 +84,7 @@ class Open_Nav():
                                                              MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, 
                                                                                              landmarks, history_traj, observation), 
                                                              images=images,
-                                                             num_output=3)
+                                                             num_output=2)
             for decision_reasoning in batch_responses:
                 if "Prediction:" not in decision_reasoning:
                     continue

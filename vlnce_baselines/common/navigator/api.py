@@ -97,7 +97,7 @@ class llmClient:
         # Add images to the prompt
         for i, image_dict in images.items():
             if image_dict is not None:
-                print(f'Append image index: {i}')
+                print(f'Append viewpoint index: {i}')
                 user_content.append(
                     {
                         "type": "text",
