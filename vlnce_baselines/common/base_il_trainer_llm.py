@@ -370,6 +370,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         current_step = 0
         nav_history = []
         error_number = 0
+        current_action_idx = 0
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
             positions = []; headings = []
@@ -405,13 +406,11 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             action_list = actions.split("\n")
             nav_logger.info("Sub-instructions: "+str(action_list))
             nav_logger.info("Landmarks: " + str(landmark_list))
-            
+                        
             step_length = 6 if len(action_list) <= 6 else 8
-            current_action_idx = 0
-            if current_action_idx < len(action_list):
-                nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
-                                +"Current landmarks: "+str(landmark_list[current_action_idx]))
-
+            nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
+                            +"Current landmarks: "+str(landmark_list[current_action_idx]))
+            
             stop_flag = False
             current_step += 1
             nav_logger.info(f"-------------------- Step {current_step} --------------------")
@@ -439,10 +438,29 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else ""
                 # Pass current_action as the instruction to estimate, and current_landmarks as landmarks
                 estimation = navigator.estimate_completion(nav_logger, current_action, current_landmarks, history_traj)
-                
+
+                if estimation == "Yes":
+                    # move to next sub-instruction and reset history
+                    if current_action_idx < len(action_list) - 1:
+                        current_action_idx += 1
+                        nav_history = []
+                        history_traj = "Step 0 start position. "
+                    elif current_action_idx == len(action_list) - 1:
+                        nav_logger.info("The current sub-instruction is the last one, no need to move to next sub-instruction")
+                        stop_flag = True
+                elif estimation == "No":
+                    pass
+                else:
+                    nav_logger.error(f"{estimation}")
+
+            if not stop_flag:
+                if current_action_idx < len(action_list):
+                    nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
+                                    +"Current landmarks: "+str(landmark_list[current_action_idx]))
+                                
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, current_landmarks, history_traj, estimation, observation, observe_dict, images_dict)
+                predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
                 
                 nav_logger.info("========== Thought ==========")
                 fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)

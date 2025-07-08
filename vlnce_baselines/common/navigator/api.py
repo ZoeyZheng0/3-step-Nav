@@ -85,6 +85,8 @@ class llmClient:
 
     def gpt_infer_with_images(self, system_prompt, user_prompt, images, num_output=1):
         user_content = []
+
+        # Add user prompt to the prompt
         user_content.append(
             {
             "type": "text",
@@ -99,24 +101,23 @@ class llmClient:
                 user_content.append(
                     {
                         "type": "text",
-                        "text": f"Image {i}:"
+                        "text": f"Viewpoint {i}:"
                     },
                 )
  
                 with io.BytesIO() as buf: 
                     image_dict['rgb'].save(buf, format='JPEG')
-                    # white_image.save(buf, format='JPEG')
                     image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
 
                 image_message = {
                     "type": "image_url",
                     "image_url": {
-                    "url": f"data:image/jpeg;base64,{image_base64}",
-                    "detail": "low"
+                        "url": f"data:image/jpeg;base64,{image_base64}",
+                        "detail": "low"
                     }
                 }
                 user_content.append(image_message)
-                        
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
