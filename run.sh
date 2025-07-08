@@ -1,12 +1,16 @@
 #!/bin/bash
 
-## Full dataset
-# episodes_to_load=100
+# Full dataset
+episodes_to_load=100
+exp_name="eval"
+gpu_id=2
 
-## Debug
-episodes_to_load=1
+# ## Debug
+# episodes_to_load=1
+# exp_name="debug"
+# gpu_id=3
 
-flag="--exp_name debug
+flag="--exp_name $exp_name
       --exp-config run_OpenNav.yaml
       --llm gpt-4o-2024-08-06
       --api_key your-api-key
@@ -16,4 +20,4 @@ flag="--exp_name debug
       TORCH_GPU_IDS [0]
       EVAL.SPLIT val_unseen
       "
-CUDA_VISIBLE_DEVICES=3 python run.py $flag
+CUDA_VISIBLE_DEVICES=$gpu_id python run.py $flag
