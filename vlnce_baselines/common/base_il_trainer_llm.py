@@ -342,7 +342,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         start_time = time.time()
 
         # set up the logger
-        log_file = "./navigator_log.log"
+        log_file = f"./navigator_{config.LOG_FILE}"
         if os.path.exists(log_file): os.remove(log_file)
         import logging
         logging.basicConfig(
@@ -368,9 +368,9 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         
         navigator = Open_Nav(self.device,config.LLM, config.API_KEY)
         current_step = 0
+        current_action_idx = 0
         nav_history = []
         error_number = 0
-        current_action_idx = 0
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
             positions = []; headings = []
@@ -510,6 +510,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                         continue
                     
                     current_step = 0
+                    current_action_idx = 0
                     nav_history = []
                     info = infos[i]
                     metric = {}
