@@ -371,6 +371,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         current_action_idx = 0
         nav_history = []
         error_number = 0
+        chosen_images = []
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
             positions = []; headings = []
@@ -440,8 +441,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 estimation = navigator.estimate_completion(nav_logger, current_action, current_landmarks, history_traj)
 
                 if estimation == "Yes":
-                    # move to next sub-instruction and reset history
+                    # Send an query to Judge whether it is the suitable time to move to next sub-instruction
+                    # navigator.judge()
+
+                    # If the answer is yes, move to next sub-instruction and reset history
+                    # If the answer is no, do not move to next sub-instruction, save the reasoning from judge as history
                     if current_action_idx < len(action_list) - 1:
+                        # move to next sub-instruction and reset history
+                        nav_logger.info("Move to next sub-instruction")
                         current_action_idx += 1
                         nav_history = []
                         history_traj = "Step 0 start position. "
@@ -467,7 +474,8 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 
                 nav_logger.info("========== Test Decision ==========")
                 next_vp, thought, error_number = navigator.test_decisions(nav_logger, fused_pred_thought, observation, instruction, error_number, observe_dict)
-           
+                # chosen_images.append(images_dict[next_vp]['rgb'].copy())
+
             try:
                 if not stop_flag:
                     env_actions = []
@@ -512,6 +520,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     current_step = 0
                     current_action_idx = 0
                     nav_history = []
+                    chosen_images = []
                     info = infos[i]
                     metric = {}
                     metric['steps_taken'] = info['steps_taken']

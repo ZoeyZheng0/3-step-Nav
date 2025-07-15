@@ -154,3 +154,20 @@ class Open_Nav():
                     return next_vp, observe_description, error_number
             return "error_next_vp", "None", error_number
 
+    def judge(self, chosen_images, instruction, landmarks):
+        """
+        Judge if the navigation path (sequence of images) follows the instruction.
+        Args:
+            chosen_images: list of PIL.Image RGB images (in order of visitation)
+            instruction: the navigation instruction
+            landmarks: the landmarks to follow
+        Returns:
+            LLM response with 'judgement' and 'reasoning'.
+        """
+        from vlnce_baselines.common.navigator.prompts import JUDGE_PROMPT
+        system_prompt = JUDGE_PROMPT['system']
+        user_prompt = JUDGE_PROMPT['user'].format(instruction, landmarks)
+        images_dict = {str(i): {'rgb': img} for i, img in enumerate(chosen_images)}
+        response = self.llm.gpt_infer_with_images(system_prompt, user_prompt, images_dict)
+        return response
+

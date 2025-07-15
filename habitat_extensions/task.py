@@ -133,6 +133,8 @@ class VLNCEDatasetV1(Dataset):
             if episode.goals is not None:
                 for g_index, goal in enumerate(episode.goals):
                     episode.goals[g_index] = NavigationGoal(**goal)
+            
+            # if episode.episode_id not in [94, 11, 140, 150]:
             self.episodes.append(episode)
 
         random.shuffle(self.episodes)

@@ -118,3 +118,16 @@ DECISION_TEST = {
                             The answer should only be a number and within the candidate list.",
     'user': "The candidate list: {}. Can you help me make a final decision? The Observation: {}, Navigation Instruction: {}, {}, Final Decision: "
 }
+
+# Navigation Judge
+JUDGE_PROMPT = {
+    'system': (
+        "You are a navigation judge. Determine if the provided navigation path correctly follows the instruction. "
+        "Respond 'judgement', and 'reasoning'. "
+        "The 'judgement' must be one of 'correct', or 'error'."
+        "The 'reasoning' is the thinking process. Use this field to explain the thinking process behind the judgement."
+    ),
+    'user': (
+        "Instruction: {} Landmarks: {} Below are the images (in order) representing the navigation path taken by the agent."
+    )
+}

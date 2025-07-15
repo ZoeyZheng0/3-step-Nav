@@ -1,14 +1,19 @@
 #!/bin/bash
 
-## Full dataset
-episodes_to_load=100
-exp_name="eval"
-gpu_id=2
+# ## Full dataset
+# episodes_to_load=100
+# exp_name="eval"
+# gpu_id=2
 
-# ## Debug
+## Debug
+episodes_to_load=5
+exp_name="debug"
+gpu_id=3
+
+# ## First
 # episodes_to_load=1
-# exp_name="debug"
-# gpu_id=3
+# exp_name="first"
+# gpu_id=1
 
 flag="--exp_name $exp_name
       --exp-config run_OpenNav.yaml
