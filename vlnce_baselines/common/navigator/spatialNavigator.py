@@ -96,6 +96,23 @@ class Open_Nav():
                 thought_list.append(pred_thought)
         return effective_prediction, thought_list, break_flag
     
+    def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):
+        effective_prediction, thought_list = [], []
+        decision_reasoning = self.llm.gpt_infer_with_images(
+            MAPGPT_NAVIGATOR['system'],
+            MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation),
+            images=images)
+        decision_reasoning = decision_reasoning.replace("**", "")
+        if "Prediction:" not in decision_reasoning:
+            logger.error(f"No Prediction in decision reasoning")
+        logger.info(f"================single query in pred_vp==========")
+        logger.info(decision_reasoning)
+        pred_thought = decision_reasoning.split("Prediction:")[0].strip()
+        pred_vp = decision_reasoning.split("Prediction:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+        effective_prediction.append(pred_vp)
+        thought_list.append(pred_thought)
+        return effective_prediction, thought_list
+    
     # =========================
     # ===== Test Decision =====
     # =========================

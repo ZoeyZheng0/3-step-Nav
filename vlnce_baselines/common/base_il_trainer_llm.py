@@ -467,7 +467,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                predictions, thoughts = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
                 
                 nav_logger.info("========== Thought ==========")
                 fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)
