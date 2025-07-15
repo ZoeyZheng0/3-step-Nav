@@ -442,19 +442,25 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
                 if estimation == "Yes":
                     # Send an query to Judge whether it is the suitable time to move to next sub-instruction
-                    # navigator.judge()
+                    nav_logger.info("========== Judge ==========")
+                    actions_so_far = " ".join(action_list[:current_action_idx+1])
+                    judgement, thought = navigator.judge(nav_logger, chosen_images, actions_so_far)
+                    if judgement == "Yes":
+                        # If the answer is yes, move to next sub-instruction and reset history
+                        # If the answer is no, do not move to next sub-instruction, save the reasoning from judge as history
+                        if current_action_idx < len(action_list) - 1:
+                            # move to next sub-instruction and reset history
+                            nav_logger.info("Move to next sub-instruction")
+                            current_action_idx += 1
+                            nav_history = []
+                            history_traj = "Step 0 start position. "
+                        elif current_action_idx == len(action_list) - 1:
+                            nav_logger.info("The current sub-instruction is the last one, no need to move to next sub-instruction")
+                            stop_flag = True
 
-                    # If the answer is yes, move to next sub-instruction and reset history
-                    # If the answer is no, do not move to next sub-instruction, save the reasoning from judge as history
-                    if current_action_idx < len(action_list) - 1:
-                        # move to next sub-instruction and reset history
-                        nav_logger.info("Move to next sub-instruction")
-                        current_action_idx += 1
-                        nav_history = []
-                        history_traj = "Step 0 start position. "
-                    elif current_action_idx == len(action_list) - 1:
-                        nav_logger.info("The current sub-instruction is the last one, no need to move to next sub-instruction")
-                        stop_flag = True
+                    else:
+                        nav_logger.info("The navigation path does not follow the instruction, stay in the current sub-instruction")
+
                 elif estimation == "No":
                     pass
                 else:
@@ -467,14 +473,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                predictions, thoughts = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                next_vp, thought = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                chosen_images.append(images_dict[next_vp]['rgb'].copy())
                 
-                nav_logger.info("========== Thought ==========")
-                fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)
+                # nav_logger.info("========== Thought ==========")
+                # fused_pred_thought = navigator.thought_fusion(nav_logger, predictions, thoughts)
                 
-                nav_logger.info("========== Test Decision ==========")
-                next_vp, thought, error_number = navigator.test_decisions(nav_logger, fused_pred_thought, observation, instruction, error_number, observe_dict)
-                # chosen_images.append(images_dict[next_vp]['rgb'].copy())
+                # nav_logger.info("========== Test Decision ==========")
+                # next_vp, thought, error_number = navigator.test_decisions(nav_logger, fused_pred_thought, observation, instruction, error_number, observe_dict)
 
             try:
                 if not stop_flag:
@@ -494,7 +500,6 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 
                     observations, _, dones, infos = [list(x) for x in zip(*outputs)]
                     instruction, images_list = self.generate_input(observations[-1])
-                    error_number = 0 
                     # finish navigation
                     if current_step == step_length:
                         dones[0] = True 

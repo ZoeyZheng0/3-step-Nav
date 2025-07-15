@@ -97,7 +97,6 @@ class Open_Nav():
         return effective_prediction, thought_list, break_flag
     
     def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):
-        effective_prediction, thought_list = [], []
         decision_reasoning = self.llm.gpt_infer_with_images(
             MAPGPT_NAVIGATOR['system'],
             MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation),
@@ -105,13 +104,21 @@ class Open_Nav():
         decision_reasoning = decision_reasoning.replace("**", "")
         if "Prediction:" not in decision_reasoning:
             logger.error(f"No Prediction in decision reasoning")
-        logger.info(f"================single query in pred_vp==========")
+            # Try again
+            decision_reasoning = self.llm.gpt_infer_with_images(
+                MAPGPT_NAVIGATOR['system'],
+                MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation),
+                images=images)
+            decision_reasoning = decision_reasoning.replace("**", "")
+            if "Prediction:" not in decision_reasoning:
+                next_vp, observe_description = random.choice(list(observe_dict.items()))
+                logger.warning(f"Random choice a next predicted action {next_vp}")
+                return next_vp, observe_description
+            
         logger.info(decision_reasoning)
         pred_thought = decision_reasoning.split("Prediction:")[0].strip()
         pred_vp = decision_reasoning.split("Prediction:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
-        effective_prediction.append(pred_vp)
-        thought_list.append(pred_thought)
-        return effective_prediction, thought_list
+        return pred_vp, pred_thought
     
     # =========================
     # ===== Test Decision =====
@@ -171,7 +178,7 @@ class Open_Nav():
                     return next_vp, observe_description, error_number
             return "error_next_vp", "None", error_number
 
-    def judge(self, chosen_images, instruction, landmarks):
+    def judge(self, logger, chosen_images, instruction):
         """
         Judge if the navigation path (sequence of images) follows the instruction.
         Args:
@@ -181,10 +188,16 @@ class Open_Nav():
         Returns:
             LLM response with 'judgement' and 'reasoning'.
         """
-        from vlnce_baselines.common.navigator.prompts import JUDGE_PROMPT
         system_prompt = JUDGE_PROMPT['system']
-        user_prompt = JUDGE_PROMPT['user'].format(instruction, landmarks)
+        user_prompt = JUDGE_PROMPT['user'].format(instruction)
         images_dict = {str(i): {'rgb': img} for i, img in enumerate(chosen_images)}
         response = self.llm.gpt_infer_with_images(system_prompt, user_prompt, images_dict)
-        return response
+        logger.info(f"Instruction: {instruction} \nLength of chosen images: {len(chosen_images)} \n{response}")
 
+        response = response.replace("**", "")
+        if "Judgement:" not in response:
+            logger.error(f"No Judgement in response")
+            return "Yes", "None"
+        pred_thought = response.split("Judgement:")[0].strip()
+        judge = response.split("Judgement:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+        return judge, pred_thought

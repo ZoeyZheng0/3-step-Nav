@@ -122,12 +122,14 @@ DECISION_TEST = {
 # Navigation Judge
 JUDGE_PROMPT = {
     'system': (
-        "You are a navigation judge. Determine if the provided navigation path correctly follows the instruction. "
-        "Respond 'judgement', and 'reasoning'. "
-        "The 'judgement' must be one of 'correct', or 'error'."
-        "The 'reasoning' is the thinking process. Use this field to explain the thinking process behind the judgement."
+        "You are a navigation judge. Determine if the provided navigation path (sequence of images) correctly follows the instruction. "
+        "Sometimes, you may only receive one image, which means the agent has only taken one step so far. In this case, you should still make a decision about whether the path so far follows the instruction. "
+        "Please note that the agent will not see the initial point of the navigation path. The first image is the first step of the agent has taken. "
+        "Respond with 'Reasoning' and 'Judgement'. "
+        "The 'Reasoning' is the thinking process. Use this field to explain the thinking process behind the judgement. "
+        "The 'Judgement' must be one of 'Yes' or 'No'. 'Yes' means the navigation path correctly follows the instruction, 'No' means the navigation path does not follow the instruction."
     ),
     'user': (
-        "Instruction: {} Landmarks: {} Below are the images (in order) representing the navigation path taken by the agent."
+        "Instruction: {} Below are the images (in order) representing the navigation path taken by the agent."
     )
 }
