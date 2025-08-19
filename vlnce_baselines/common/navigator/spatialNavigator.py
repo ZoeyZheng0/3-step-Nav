@@ -184,9 +184,10 @@ class Open_Nav():
         Args:
             chosen_images: list of PIL.Image RGB images (in order of visitation)
             instruction: the navigation instruction
-            landmarks: the landmarks to follow
         Returns:
-            LLM response with 'judgement' and 'reasoning'.
+            LLM response with 'judgement', 'confidence', and 'reasoning'.
+            Judgement can be 'Yes', 'Stay', 'Backtrack', or 'Look Around'.
+            Confidence is a score from 0-10.
         """
         system_prompt = JUDGE_PROMPT['system']
         user_prompt = JUDGE_PROMPT['user'].format(instruction)
@@ -195,9 +196,66 @@ class Open_Nav():
         logger.info(f"Instruction: {instruction} \nLength of chosen images: {len(chosen_images)} \n{response}")
 
         response = response.replace("**", "")
+        
+        # Extract confidence score
+        confidence = 5  # Default confidence
+        if "Confidence:" in response:
+            try:
+                confidence_str = response.split("Confidence:")[1].split("\n")[0].strip()
+                confidence = int(confidence_str)
+                confidence = max(0, min(10, confidence))  # Clamp between 0-10
+            except:
+                logger.error(f"Could not parse confidence score, using default: 5")
+        
         if "Judgement:" not in response:
             logger.error(f"No Judgement in response")
-            return "Yes", "None"
-        pred_thought = response.split("Judgement:")[0].strip()
-        judge = response.split("Judgement:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
-        return judge, pred_thought
+            return "Yes", confidence, "None"
+        
+        # Extract reasoning and judgement
+        parts = response.split("Judgement:")
+        if len(parts) >= 2:
+            reasoning_part = parts[0].strip()
+            judgement_part = parts[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+            
+            # Extract reasoning (everything before Confidence)
+            if "Confidence:" in reasoning_part:
+                reasoning = reasoning_part.split("Confidence:")[0].strip()
+            else:
+                reasoning = reasoning_part
+        else:
+            reasoning = "None"
+            judgement_part = "Yes"
+        
+        return judgement_part, confidence, reasoning
+    
+    def look_around(self, logger, current_step, images_dict, instruction, landmarks, history_traj):
+        """
+        Look around at candidate viewpoints to gather more information.
+        Args:
+            logger: logger object
+            current_step: current step number
+            images_dict: dictionary of available viewpoints and their images
+            instruction: current instruction
+            landmarks: landmarks to look for
+            history_traj: navigation history
+        Returns:
+            enhanced observation and observation dictionary
+        """
+        logger.info("========== Look Around Mode ==========")
+        logger.info("Exploring candidate viewpoints to gather more information")
+        
+        # Get observations from all available viewpoints
+        all_observations = []
+        all_observe_dict = {}
+        
+        for viewpoint_id, viewpoint_data in images_dict.items():
+            logger.info(f"Exploring viewpoint {viewpoint_id}")
+            observation, observe_dict = self.observe_environment(logger, current_step, {viewpoint_id: viewpoint_data})
+            all_observations.extend(observation)
+            all_observe_dict[viewpoint_id] = observe_dict[viewpoint_id]
+        
+        # Create a comprehensive observation summary
+        comprehensive_observation = " ".join(all_observations)
+        logger.info(f"Comprehensive observation from all viewpoints: {comprehensive_observation}")
+        
+        return comprehensive_observation, all_observe_dict

@@ -125,9 +125,15 @@ JUDGE_PROMPT = {
         "You are a navigation judge. Determine if the provided navigation path (sequence of images) correctly follows the instruction. "
         "Sometimes, you may only receive one image, which means the agent has only taken one step so far. In this case, you should still make a decision about whether the path so far follows the instruction. "
         "Please note that the agent will not see the initial point of the navigation path. The first image is the first step of the agent has taken. "
-        "Respond with 'Reasoning' and 'Judgement'. "
+        "Respond with 'Reasoning', 'Confidence', and 'Judgement'. "
         "The 'Reasoning' is the thinking process. Use this field to explain the thinking process behind the judgement. "
-        "The 'Judgement' must be one of 'Yes' or 'No'. 'Yes' means the navigation path correctly follows the instruction, 'No' means the navigation path does not follow the instruction."
+        "The 'Confidence' must be a score from 0 to 10, where 10 means 100% sure and 0 means not sure at all. "
+        "The 'Judgement' must be one of 'Yes', 'Stay', 'Backtrack', or 'Look Around'. "
+        "'Yes' means the navigation path correctly follows the instruction and it's time to move to the next sub-instruction. "
+        "'Stay' means the navigation path has not finished the current sub-instruction, you need to stay in the current sub-instruction, and continue to follow by the current sub-instruction. "
+        "'Backtrack' means the agent has gone in the wrong direction and needs to go back to the previous step to try a different path. "
+        "'Look Around' means the agent should explore candidate viewpoints to gather more information before making a decision. "
+        "If your confidence score is below 5, you should choose 'Look Around'. If your confidence score is 5 or above, you can choose 'Yes', 'Stay', or 'Backtrack'."
     ),
     'user': (
         "Instruction: {} Below are the images (in order) representing the navigation path taken by the agent."

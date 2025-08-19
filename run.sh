@@ -6,7 +6,7 @@
 # gpu_id=2
 
 ## Debug
-episodes_to_load=5
+episodes_to_load=20
 exp_name="debug"
 gpu_id=3
 

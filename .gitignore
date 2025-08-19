@@ -2,6 +2,7 @@
 *.jpg
 *.log
 *.bash
+*.sh
 
 **/check_*
 data/*

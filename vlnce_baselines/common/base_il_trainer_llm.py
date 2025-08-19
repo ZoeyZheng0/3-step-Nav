@@ -242,6 +242,37 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 
         return waypoint_images, waypoint_radius, waypoint_distances
     
+    def _create_reverse_action(self, action):
+        """
+        Create a reverse action to undo the given action.
+        Args:
+            action: The original action to reverse
+        Returns:
+            The reverse action
+        """
+        if action['action']['action'] == 4:  # Move action
+            # For move actions, reverse the angle by adding 180 degrees (π radians)
+            original_angle = action['action']['action_args']['angle']
+            original_distance = action['action']['action_args']['distance']
+            
+            # Reverse the angle (add π radians)
+            reverse_angle = original_angle + math.pi
+            # Normalize to [-π, π]
+            reverse_angle = (reverse_angle + math.pi) % (2 * math.pi) - math.pi
+            
+            return {
+                'action': {
+                    'action': 4,
+                    'action_args': {
+                        'angle': reverse_angle,
+                        'distance': original_distance,
+                    }
+                }
+            }
+        else:
+            # For other actions, just return the same action (no reverse needed)
+            return action
+    
 
     def _eval_llm(
         self,
@@ -372,6 +403,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         nav_history = []
         error_number = 0
         chosen_images = []
+        env_actions_history = []  # Record environment actions for backtracking
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
             positions = []; headings = []
@@ -444,7 +476,13 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     # Send an query to Judge whether it is the suitable time to move to next sub-instruction
                     nav_logger.info("========== Judge ==========")
                     actions_so_far = " ".join(action_list[:current_action_idx+1])
-                    judgement, thought = navigator.judge(nav_logger, chosen_images, actions_so_far)
+                    judgement, confidence, thought = navigator.judge(nav_logger, chosen_images, actions_so_far)
+                    nav_logger.info(f"Judge confidence score: {confidence}")
+                    
+                    # Check confidence and handle accordingly
+                    if confidence < 5:
+                        nav_logger.info(f"Low confidence ({confidence}), switching to Look Around mode")
+                        judgement = "Look Around"
                     if judgement == "Yes":
                         # If the answer is yes, move to next sub-instruction and reset history
                         # If the answer is no, do not move to next sub-instruction, save the reasoning from judge as history
@@ -458,7 +496,48 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                             nav_logger.info("The current sub-instruction is the last one, no need to move to next sub-instruction")
                             stop_flag = True
 
-                    else:
+                    elif judgement == "Look Around":
+                        # If the answer is look around, explore candidate viewpoints
+                        nav_logger.info("The navigation path needs to look around for more information")
+                        current_action = action_list[current_action_idx] if current_action_idx < len(action_list) else ""
+                        current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else ""
+                        
+                        # Use look around function to gather comprehensive information
+                        enhanced_observation, enhanced_observe_dict = navigator.look_around(
+                            nav_logger, current_step, images_dict, current_action, current_landmarks, history_traj
+                        )
+                        
+                        # Update observation with enhanced information
+                        observation = enhanced_observation
+                        observe_dict = enhanced_observe_dict
+                        nav_logger.info("Enhanced observation gathered from all viewpoints")
+
+                    elif judgement == "Backtrack":
+                        # If the answer is backtrack, go back to the previous step
+                        nav_logger.info("The navigation path needs to backtrack to the previous step")
+                        if len(env_actions_history) > 0:
+                            # Execute reverse action to go back
+                            last_action = env_actions_history.pop()
+                            reverse_action = self._create_reverse_action(last_action)
+                            nav_logger.info(f"Executing reverse action: {reverse_action}")
+                            
+                            # Execute the reverse action
+                            outputs = envs.step([reverse_action])
+                            observations, _, dones, infos = [list(x) for x in zip(*outputs)]
+                            instruction, images_list = self.generate_input(observations[-1])
+                            
+                            # Remove last step from history
+                            if len(nav_history) > 0:
+                                nav_history.pop()
+                            if len(chosen_images) > 0:
+                                chosen_images.pop()
+                            
+                            nav_logger.info("Successfully backtracked to previous position")
+                            backtrack_flag = True  # Set flag to skip current step
+                        else:
+                            nav_logger.info("Cannot backtrack further, no previous actions available")
+
+                    else:  # judgement == "Stay"
                         nav_logger.info("The navigation path does not follow the instruction, stay in the current sub-instruction")
 
                 elif estimation == "No":
@@ -492,6 +571,8 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                             'distance': distance_dict[next_vp],
                         }}})
                     nav_logger.info(f"The final env action: {env_actions}")
+                    # Record the action for potential backtracking
+                    env_actions_history.append(env_actions[0])
                     outputs = envs.step(env_actions)
                     
                     curr_observe = observe_dict[next_vp]
@@ -526,6 +607,8 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     current_action_idx = 0
                     nav_history = []
                     chosen_images = []
+                    env_actions_history = []
+                    backtrack_flag = False
                     info = infos[i]
                     metric = {}
                     metric['steps_taken'] = info['steps_taken']
