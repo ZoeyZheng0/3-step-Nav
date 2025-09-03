@@ -60,7 +60,7 @@ from ..models.utils import (
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
-    import tensorflow as tf  # noqa: F401
+    # import tensorflow as tf  # noqa: F401
 
 class BaseVLNCETrainerLLM(BaseILTrainer):
     r"""A base trainer for VLN-CE imitation learning."""
@@ -396,13 +396,6 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 actions_cache = json.load(file)
         else:
             actions_cache = {}
-        
-        # Initialize debug collector if enabled
-        debug_collector = None
-        if getattr(config, 'ENABLE_DEBUG_VISUALIZATION', True):
-            from vlnce_baselines.common.debug_collector import NavigationDebugCollector
-            debug_collector = NavigationDebugCollector(experiment_name=config.LOG_FILE.replace('.log', ''))
-            nav_logger.info("Debug visualization collector enabled") 
         
         navigator = Open_Nav(self.device,config.LLM, config.API_KEY)
         current_step = 0
