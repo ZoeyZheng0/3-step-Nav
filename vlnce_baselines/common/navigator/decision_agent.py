@@ -179,6 +179,72 @@ You have access to tools that let you:
 - Understand what each action does internally
 - Analyze the logic and side effects of each decision
 
+## In-Context Learning Examples for Each Meta Ability:
+
+### CONTINUE Examples (Move to next sub-instruction):
+Case 1: "Walk through the doorway" completed, next is "Turn left at the hallway"
+- Observation: Doorway successfully passed, now in a hallway with left/right options
+- Decision: Continue - doorway task achieved, move to hallway navigation
+- Confidence: 9/10
+
+Case 2: "Go up the stairs" completed, next is "Enter the second door on your right"
+- Observation: At top of stairs, corridor with multiple doors visible
+- Decision: Continue - stairs climbed successfully, ready for door-finding task
+- Confidence: 8/10
+
+Case 3: "Exit the bedroom" completed, next is "Walk down the hallway to the kitchen"
+- Observation: Standing outside bedroom door, long hallway visible ahead
+- Decision: Continue - bedroom exited, proceed with hallway navigation
+- Confidence: 9/10
+
+### STAY Examples (Continue with current instruction):
+Case 1: "Go to the living room with the fireplace"
+- Observation: In a living room but no fireplace visible yet
+- Decision: Stay - correct room type but missing key landmark (fireplace)
+- Confidence: 6/10
+
+Case 2: "Walk past three doors on your left"
+- Observation: Passed two doors so far, third door visible ahead
+- Decision: Stay - task partially complete (2/3 doors), continue counting
+- Confidence: 7/10
+
+Case 3: "Navigate to the end of the hallway"
+- Observation: Midway through hallway, end not yet reached
+- Decision: Stay - still in progress toward hallway end
+- Confidence: 7/10
+
+### BACKTRACK Examples (Return to previous position):
+Case 1: "Turn right at the intersection"
+- Observation: Turned left by mistake, wrong corridor
+- Decision: Backtrack - wrong turn taken, need to return to intersection
+- Confidence: 9/10
+
+Case 2: "Enter the room with blue walls"
+- Observation: Entered room with white walls, no blue visible
+- Decision: Backtrack - wrong room entered, return to hallway
+- Confidence: 8/10
+
+Case 3: "Go through the glass door"
+- Observation: Went through wooden door instead, different room than expected
+- Decision: Backtrack - incorrect door chosen, need to find glass door
+- Confidence: 9/10
+
+### LOOK AROUND Examples (Gather more information):
+Case 1: "Find the room with the piano"
+- Observation: At intersection with multiple room entrances, unclear which has piano
+- Decision: Look Around - need to check multiple viewpoints for piano visibility
+- Confidence: 5/10
+
+Case 2: "Go toward the kitchen"
+- Observation: Multiple paths available, kitchen direction unclear
+- Decision: Look Around - explore viewpoints to identify kitchen indicators
+- Confidence: 4/10
+
+Case 3: "Locate the staircase going down"
+- Observation: In large open area, staircase not immediately visible
+- Decision: Look Around - scan environment comprehensively for stairs
+- Confidence: 5/10
+
 Current Context:
 - Instruction: {instruction}
 - Actions completed: {actions_completed}
@@ -187,8 +253,8 @@ Current Context:
 - Number of images: {num_images}
 
 Available Capabilities (you can read their code using tools):
-- Move on: Move to next sub-instruction (resets history)
-- Continue: Keep working on current instruction (preserves context)
+- Continue: Move to next sub-instruction (resets history)
+- Stay: Keep working on current instruction (preserves context)
 - Backtrack: Reverse last movement (undoes progress)
 - Look Around: Gather comprehensive information (no movement)
 
@@ -198,6 +264,8 @@ Analyze the navigation sequence considering:
 - Path correctness relative to instructions
 - Need for more information or correction
 - The actual implementation effects of each capability
+
+Use the in-context examples above to guide your decision-making process.
 
 {format_instructions}
 
@@ -434,6 +502,28 @@ LOOK_AROUND Implementation:
 {capability_analysis['look_around']['understanding']}
 {capability_analysis['look_around']['logic']}
 
+## In-Context Learning Examples:
+
+### CONTINUE (Resets history, moves to next sub-instruction):
+- "Walk through doorway" done → "Turn left": Doorway passed, ready for turn = Continue (9/10)
+- "Go upstairs" done → "Find door #2": At top, doors visible = Continue (8/10)
+- "Exit room" done → "Go to kitchen": Outside room, hallway ahead = Continue (9/10)
+
+### STAY (Preserves context, continues current):
+- "Find fireplace room": In living room, no fireplace yet = Stay (6/10)
+- "Pass 3 doors": Passed 2/3 doors = Stay (7/10)
+- "Reach hallway end": Midway through = Stay (7/10)
+
+### BACKTRACK (Reverses last action):
+- "Turn right": Turned left instead = Backtrack (9/10)
+- "Blue wall room": Entered white room = Backtrack (8/10)
+- "Glass door": Went through wood door = Backtrack (9/10)
+
+### LOOK AROUND (Explores viewpoints, no movement):
+- "Find piano room": Multiple rooms, unclear = Look Around (5/10)
+- "Go to kitchen": Multiple paths available = Look Around (4/10)
+- "Find stairs down": Large area, not visible = Look Around (5/10)
+
 Given this understanding of what each action actually does in the code,
 and considering the current context:
 - Instruction: {context.current_action}
@@ -443,6 +533,7 @@ and considering the current context:
 
 What is the most appropriate navigation decision?
 Consider the actual code effects, not just the conceptual purpose.
+Match your situation to the examples above.
 """
         
         # Make decision with enhanced understanding
