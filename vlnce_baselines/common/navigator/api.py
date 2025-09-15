@@ -104,15 +104,20 @@ class llmClient:
                         "text": f"Viewpoint {i}:"
                     },
                 )
- 
-                with io.BytesIO() as buf: 
-                    image_dict['rgb'].save(buf, format='JPEG')
-                    image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+                # Use base64 data if available, otherwise encode from PIL image
+                if 'base64' in image_dict:
+                    image_base64_url = image_dict['base64']
+                else:
+                    with io.BytesIO() as buf:
+                        image_dict['rgb'].save(buf, format='JPEG')
+                        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                        image_base64_url = f"data:image/jpeg;base64,{image_base64}"
 
                 image_message = {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_base64}",
+                        "url": image_base64_url,
                         # "detail": "low"
                     }
                 }

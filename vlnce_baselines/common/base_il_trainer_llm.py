@@ -9,6 +9,9 @@ from typing import Dict, List
 from PIL import Image
 import requests
 from openai import OpenAI
+import cv2
+import base64
+import io
 
 # for navigator      
 from vlnce_baselines.common.navigator.spatialNavigator import *
@@ -57,6 +60,27 @@ from ..utils import get_camera_orientations
 from ..models.utils import (
     length2mask, dir_angle_feature, dir_angle_feature_with_ele,
 )
+
+def image_to_base64(image_array):
+    """Convert numpy image array to base64 string"""
+    if isinstance(image_array, np.ndarray):
+        # Convert to PIL Image
+        if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+            # RGB image
+            pil_image = Image.fromarray(image_array.astype(np.uint8), mode='RGB')
+        elif len(image_array.shape) == 2:
+            # Grayscale image
+            pil_image = Image.fromarray(image_array.astype(np.uint8), mode='L')
+        else:
+            # Other formats, convert to RGB
+            pil_image = Image.fromarray(image_array.astype(np.uint8))
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        pil_image.save(buffered, format="JPEG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        return f"data:image/jpeg;base64,{img_str}"
+    return None
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
@@ -147,40 +171,32 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         
     def generate_input(self, observations):
         instruction = observations['instruction']['text']
-        image_dict = {} 
+        image_dict = {}
         rgb_image_dict = {}
         depth_image_dict = {}
         rgb_index = 0
         depth_index = 0
         for key in observations.keys():
-            image_path = "./image_show/"
             if 'rgb' in key:
-                image_path += f"{key}.jpg"
-                image = Image.fromarray(observations[key], mode="RGB")
-                dir_name = os.path.dirname(image_path)
-                if not os.path.exists(dir_name):
-                    os.makedirs(dir_name)
-                image.save(image_path, format="JPEG")
-                rgb_image_dict[str(rgb_index)] = Image.open(image_path)
+                # Convert numpy array to PIL Image for rgb images
+                rgb_image_dict[str(rgb_index)] = Image.fromarray(observations[key], mode="RGB")
                 rgb_index += 1
             if 'depth' in key:
-                image_path += f"{key}.jpg"
+                # Process depth images
                 if observations[key].ndim == 3 and observations[key].shape[-1] == 1:
                     depth_map = observations[key].squeeze(-1)
+                else:
+                    depth_map = observations[key]
                 depth_img = (255 * (depth_map - np.min(depth_map)) / (np.max(depth_map) - np.min(depth_map))).astype(np.uint8)
-                image = Image.fromarray(depth_img)
-                dir_name = os.path.dirname(image_path)
-                if not os.path.exists(dir_name):
-                    os.makedirs(dir_name)
-                image.save(image_path)
-                depth_image_dict[str(depth_index)] = Image.open(image_path)
+                depth_image_dict[str(depth_index)] = Image.fromarray(depth_img)
                 depth_index += 1
         for index in rgb_image_dict:
             image_dict[index] = {
                 'rgb': rgb_image_dict[index],
-                'depth': depth_image_dict[index]
+                'depth': depth_image_dict[index],
+                'base64': image_to_base64(np.array(rgb_image_dict[index]))
             }
-            
+
         return instruction, image_dict
     
     def construct_image_dicts(self, batch_distance, batch_angles, image_dict):
@@ -406,6 +422,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         chosen_images_descriptions = []  # Descriptions for each image
         env_actions_history = []  # Record environment actions for backtracking
         
+        # Initialize debug info for visualization
+        debug_info = {
+            "experiment_name": config.EVAL.SPLIT,
+            "episodes": []
+        }
+        
         # Add the initial forward-looking image (Direction 0)
         if '0' in images_list:
             chosen_images.append(images_list['0']['rgb'].copy())
@@ -423,6 +445,33 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             # ==========Navigator start==========
             nav_logger.info(f"==================== The current episode id is {current_episodes[0].episode_id} ====================")
             nav_logger.info("Instruction: "+instruction)
+            
+            # Collect episode info for debug.json
+            # Always create a new entry for each navigation attempt to avoid mixing steps from different runs
+            episode_id = current_episodes[0].episode_id
+            
+            # Check if this is a continuation of the current episode or a new attempt
+            # If it's the first step (current_step == 0), create a new episode entry
+            if current_step == 0:
+                episode_info = {
+                    "episode_id": episode_id,
+                    "scene_id": current_episodes[0].scene_id,
+                    "instruction": instruction,
+                    "steps": []  # Will store step-by-step data
+                }
+                debug_info["episodes"].append(episode_info)
+            # Otherwise, use the last episode entry (which should be the current one)
+            else:
+                episode_info = debug_info["episodes"][-1] if debug_info["episodes"] else None
+                # Safety check: create new entry if somehow episode_info is None
+                if episode_info is None:
+                    episode_info = {
+                        "episode_id": episode_id,
+                        "scene_id": current_episodes[0].scene_id,
+                        "instruction": instruction,
+                        "steps": []
+                    }
+                    debug_info["episodes"].append(episode_info)
             actions, landmark_list = "", []
             if instruction not in actions_cache.keys():
                 actions = navigator.get_actions(instruction)
@@ -471,6 +520,23 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             nav_logger.info("========== Get Observation ==========")
             observation, observe_dict = navigator.observe_environment(nav_logger, current_step, images_dict)
             
+            # Prepare step data for debug.json
+            step_data = {
+                "step_index": current_step,
+                "viewpoints": {},
+                "current_action": action_list[current_action_idx] if current_action_idx < len(action_list) else "Finishing"
+            }
+            
+            # Store all viewpoint images with base64 encoding and mark candidates
+            for vp_id, vp_data in images_dict.items():
+                # Get base64 data that's already encoded in generate_input
+                rgb_base64 = vp_data.get('base64') if isinstance(vp_data, dict) else None
+
+                step_data["viewpoints"][vp_id] = {
+                    "rgb_base64": rgb_base64,
+                    "is_chosen": False  # Will be updated after selection
+                }
+            
             nav_logger.info("========== Review History ==========")
             history_traj = navigator.review_history(nav_logger, nav_history) if len(nav_history) > 0 else "Step 0 start position. "
 
@@ -482,6 +548,22 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
                 next_vp, thought = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                # print(images_dict)
+                
+                # Update step data with chosen viewpoint
+                step_data["chosen_viewpoint"] = next_vp
+                if next_vp in step_data["viewpoints"]:
+                    step_data["viewpoints"][next_vp]["is_chosen"] = True
+                
+                # Save images for this step
+                episode_image_dir = os.path.join(config.RESULTS_DIR, "episode_images", str(current_episodes[0].episode_id))
+                os.makedirs(episode_image_dir, exist_ok=True)
+                
+                # Image saving is now handled via base64 storage in JSON
+                nav_logger.info(f"Images stored in base64 format for step {current_step}")
+                
+                # Add step data to episode info
+                episode_info["steps"].append(step_data)
                 
                 # Save history
                 curr_observe = observe_dict[next_vp]
@@ -795,6 +877,15 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         )
         with open(fname, "w") as f:
             json.dump(stats_episodes, f, indent=4)
+        
+        # Save debug.json with episode information
+        debug_fname = os.path.join(
+            config.RESULTS_DIR,
+            "debug.json"
+        )
+        with open(debug_fname, "w") as f:
+            json.dump(debug_info, f, indent=4)
+        nav_logger.info(f"Saved debug info to {debug_fname}")
 
         if self.local_rank < 1:
             if config.EVAL.SAVE_RESULTS:
