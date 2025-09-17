@@ -497,6 +497,11 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             nav_logger.info("Sub-instructions: "+str(action_list))
             nav_logger.info("Landmarks: " + str(landmark_list))
 
+            # Store sub-instructions and landmarks in episode_info for the first step
+            if current_step == 0:  # First step after initialization
+                episode_info["sub_instructions"] = action_list
+                episode_info["landmarks"] = landmark_list
+
             # Use MAX_EPISODE_STEPS from config instead of hardcoded values
             step_length = self.config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
             nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
@@ -547,11 +552,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                next_vp, thought = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                next_vp, thought, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
                 # print(images_dict)
-                
-                # Update step data with chosen viewpoint
+
+                # Update step data with chosen viewpoint and GPT interaction
                 step_data["chosen_viewpoint"] = next_vp
+                step_data["gpt_interaction"] = gpt_interaction
                 if next_vp in step_data["viewpoints"]:
                     step_data["viewpoints"][next_vp]["is_chosen"] = True
                 
@@ -611,6 +617,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else ""
                 # Pass current_action as the instruction to estimate, and current_landmarks as landmarks
                 estimation = navigator.estimate_completion(nav_logger, current_action, current_landmarks, history_traj)
+                nav_logger.info(f"Completion estimation result: '{estimation}'")
+
+                # Add estimation result to step data (between viewpoint images and GPT interaction)
+                step_data["estimation_result"] = estimation
 
                 if estimation == "Yes":
                     # Use Decision Agent to determine next action
@@ -647,11 +657,18 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     # You can switch between make_decision() and make_informed_decision()
                     use_code_analysis = getattr(config, 'USE_CODE_ANALYSIS', True)
                     if use_code_analysis:
-                        decision, confidence, reasoning = decision_agent.make_informed_decision(decision_context)
+                        decision, confidence, reasoning, decision_interaction = decision_agent.make_informed_decision_with_capture(decision_context)
                     else:
-                        decision, confidence, reasoning = decision_agent.make_decision(decision_context)
+                        decision, confidence, reasoning, decision_interaction = decision_agent.make_decision_with_capture(decision_context)
                     nav_logger.info(f"Agent decision: {decision.value} (confidence: {confidence}/10)")
                     nav_logger.info(f"Agent reasoning: {reasoning}")
+
+                    # Store decision agent interaction in step data
+                    if decision_interaction:
+                        step_data["decision_agent_interaction"] = decision_interaction
+                        nav_logger.info("Decision agent interaction data stored in step_data")
+                    else:
+                        nav_logger.warning("No decision interaction data received")
                     
                     # Execute decision
                     if decision == NavigationDecision.CONTINUE:
@@ -715,9 +732,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                         stop_flag = True
 
                 elif estimation == "No":
-                    pass
+                    nav_logger.info("Instruction not yet completed - continuing with current instruction")
+                    # Skip decision agent visualization when estimation is "No"
+                    nav_logger.info("Skipping decision agent visualization - continuing with standard navigation")
+
                 else:
-                    nav_logger.error(f"{estimation}")
+                    nav_logger.error(f"Unexpected estimation result: {estimation}")
 
             try:
                 if not stop_flag:

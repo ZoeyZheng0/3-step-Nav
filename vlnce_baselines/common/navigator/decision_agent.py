@@ -450,7 +450,58 @@ Logic analysis for {capability_name}:
         )
         
         return decision, confidence, reasoning
-    
+
+    def make_decision_with_capture(self, context: DecisionContext) -> Tuple[NavigationDecision, float, str, Dict]:
+        """
+        Make a navigation decision and capture GPT interaction data.
+
+        Args:
+            context: Decision context with images and navigation state
+
+        Returns:
+            Tuple of (decision, confidence, reasoning, interaction_data)
+        """
+        decision, confidence, reasoning = self.make_decision(context)
+
+        # Convert images to base64 for storage
+        import base64
+        import io
+        images_base64 = {}
+        for i, img in enumerate(context.chosen_images):
+            with io.BytesIO() as buf:
+                img.save(buf, format='JPEG')
+                image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                image_base64_url = f"data:image/jpeg;base64,{image_base64}"
+                images_base64[str(i)] = image_base64_url
+
+        # Capture the interaction that was used
+        interaction_data = {
+            'system_prompt': self.decision_chain.prompt.format(**{
+                "instruction": context.current_action,
+                "actions_completed": context.actions_completed,
+                "landmarks": ", ".join(context.current_landmarks) if context.current_landmarks else "None",
+                "history": context.history_trajectory,
+                "num_images": len(context.chosen_images)
+            }).split("User:")[0].replace("System:", "").strip(),
+            'user_prompt': self.decision_chain.prompt.format(**{
+                "instruction": context.current_action,
+                "actions_completed": context.actions_completed,
+                "landmarks": ", ".join(context.current_landmarks) if context.current_landmarks else "None",
+                "history": context.history_trajectory,
+                "num_images": len(context.chosen_images)
+            }).split("User:")[1].strip(),
+            'response': f"Decision: {decision.value}\nConfidence: {confidence}\nReasoning: {reasoning}",
+            'images_base64': images_base64,
+            'metadata': {
+                'model': getattr(self.llm_client, 'model', 'unknown'),
+                'method': 'make_decision',
+                'num_images': len(context.chosen_images),
+                'current_step': context.current_step
+            }
+        }
+
+        return decision, confidence, reasoning, interaction_data
+
     def make_informed_decision(self, context: DecisionContext) -> Tuple[NavigationDecision, float, str]:
         """
         Make an informed decision by first understanding capability implementations.
@@ -584,7 +635,167 @@ Match your situation to the examples above.
         )
         
         return decision, confidence, reasoning
-    
+
+    def make_informed_decision_with_capture(self, context: DecisionContext) -> Tuple[NavigationDecision, float, str, Dict]:
+        """
+        Make an informed decision and capture GPT interaction data.
+
+        Args:
+            context: Decision context with images and navigation state
+
+        Returns:
+            Tuple of (decision, confidence, reasoning, interaction_data)
+        """
+        self.logger.info("========== Informed Navigation Decision (with Code Analysis) ==========")
+
+        # First, analyze the available capabilities
+        capability_analysis = {}
+        for capability in ['continue', 'stay', 'backtrack', 'look_around']:
+            # Read and understand each capability
+            code = self.tools[3].func(capability)  # ReadCapabilityCode
+            understanding = self.tools[4].func(capability)  # UnderstandCapability
+            logic = self.tools[5].func(capability)  # AnalyzeCapabilityLogic
+
+            capability_analysis[capability] = {
+                'code': code,
+                'understanding': understanding,
+                'logic': logic
+            }
+
+            self.logger.info(f"Analyzed capability '{capability}'")
+
+        # Create enhanced prompt with capability understanding
+        enhanced_prompt = f"""
+I have analyzed the implementation of each navigation capability:
+
+CONTINUE Implementation:
+{capability_analysis['continue']['understanding']}
+{capability_analysis['continue']['logic']}
+
+STAY Implementation:
+{capability_analysis['stay']['understanding']}
+{capability_analysis['stay']['logic']}
+
+BACKTRACK Implementation:
+{capability_analysis['backtrack']['understanding']}
+{capability_analysis['backtrack']['logic']}
+
+LOOK_AROUND Implementation:
+{capability_analysis['look_around']['understanding']}
+{capability_analysis['look_around']['logic']}
+
+## In-Context Learning Examples:
+
+### CONTINUE (Resets history, moves to next sub-instruction):
+- "Walk through doorway" done → "Turn left": Doorway passed, ready for turn = Continue (9/10)
+- "Go upstairs" done → "Find door #2": At top, doors visible = Continue (8/10)
+- "Exit room" done → "Go to kitchen": Outside room, hallway ahead = Continue (9/10)
+
+### STAY (Preserves context, continues current):
+- "Find fireplace room": In living room, no fireplace yet = Stay (6/10)
+- "Pass 3 doors": Passed 2/3 doors = Stay (7/10)
+- "Reach hallway end": Midway through = Stay (7/10)
+
+### BACKTRACK (Reverses last action):
+- "Turn right": Turned left instead = Backtrack (9/10)
+- "Blue wall room": Entered white room = Backtrack (8/10)
+- "Glass door": Went through wood door = Backtrack (9/10)
+
+### LOOK AROUND (Explores viewpoints, no movement):
+- "Find piano room": Multiple rooms, unclear = Look Around (5/10)
+- "Go to kitchen": Multiple paths available = Look Around (4/10)
+- "Find stairs down": Large area, not visible = Look Around (5/10)
+
+Given this understanding of what each action actually does in the code,
+and considering the current context:
+- Instruction: {context.current_action}
+- Landmarks to find: {', '.join(context.current_landmarks) if context.current_landmarks else 'None'}
+- History: {context.history_trajectory}
+- Images analyzed: {len(context.chosen_images)}
+
+What is the most appropriate navigation decision?
+Consider the actual code effects, not just the conceptual purpose.
+Match your situation to the examples above.
+"""
+
+        # Store system prompt for capture
+        system_prompt = "You are a code-aware navigation decision agent that understands implementation details."
+
+        # Make decision with enhanced understanding
+        if context.chosen_images:
+            images_dict = {
+                str(i): {'rgb': img}
+                for i, img in enumerate(context.chosen_images)
+            }
+
+            # Add image descriptions if available
+            final_prompt = enhanced_prompt
+            if context.image_descriptions:
+                descriptions_text = "\n\nImage sequence descriptions:\n"
+                for i, desc in enumerate(context.image_descriptions):
+                    descriptions_text += f"Image {i}: {desc}\n"
+                final_prompt = descriptions_text + "\n" + enhanced_prompt
+                self.logger.info(f"Added image descriptions to informed decision prompt")
+
+            response = self.llm_client.gpt_infer_with_images(
+                system_prompt,
+                final_prompt + "\n\n" + self.parser.get_format_instructions(),
+                images_dict
+            )
+        else:
+            response = self.llm_client.gpt_infer(
+                system_prompt,
+                enhanced_prompt + "\n\n" + self.parser.get_format_instructions()
+            )
+
+        # Parse response
+        parsed = self.parser.parse(response)
+        decision = self._string_to_decision(parsed["decision"])
+        confidence = parsed["confidence"]
+        reasoning = f"[Code-Informed] {parsed['reasoning']}"
+
+        # Apply decision rules
+        decision = self._apply_decision_rules(decision, confidence, context)
+
+        # Log informed decision
+        self.logger.info(f"Informed Decision: {decision.value}")
+        self.logger.info(f"Confidence: {confidence}/10")
+        self.logger.info(f"Reasoning: {reasoning}")
+
+        # Store in memory
+        self.memory.save_context(
+            {"input": f"Informed context at step {context.current_step} with code analysis"},
+            {"output": f"Decision: {decision.value} (confidence: {confidence}) - Code-informed"}
+        )
+
+        # Convert images to base64 for storage
+        import base64
+        import io
+        images_base64 = {}
+        for i, img in enumerate(context.chosen_images):
+            with io.BytesIO() as buf:
+                img.save(buf, format='JPEG')
+                image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                image_base64_url = f"data:image/jpeg;base64,{image_base64}"
+                images_base64[str(i)] = image_base64_url
+
+        # Capture the interaction data
+        interaction_data = {
+            'system_prompt': system_prompt,
+            'user_prompt': final_prompt + "\n\n" + self.parser.get_format_instructions() if context.chosen_images else enhanced_prompt + "\n\n" + self.parser.get_format_instructions(),
+            'response': response,
+            'images_base64': images_base64,
+            'metadata': {
+                'model': getattr(self.llm_client, 'model', 'unknown'),
+                'method': 'make_informed_decision',
+                'num_images': len(context.chosen_images),
+                'current_step': context.current_step,
+                'code_analysis_used': True
+            }
+        }
+
+        return decision, confidence, reasoning, interaction_data
+
     def _string_to_decision(self, decision_str: str) -> NavigationDecision:
         """Convert string to NavigationDecision enum"""
         decision_str = decision_str.strip().upper()

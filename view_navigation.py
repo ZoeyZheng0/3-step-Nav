@@ -47,47 +47,146 @@ def load_experiment_data(experiment_name):
     return experiment_data
 
 
+def display_gpt_interaction(step_data):
+    """Display GPT input and output for a step"""
+    gpt_data = step_data.get('gpt_interaction', {})
+
+    if gpt_data:
+
+        # # Show response metadata first if available
+        # if 'metadata' in gpt_data:
+        #     metadata = gpt_data['metadata']
+        #     col1, col2, col3, col4 = st.columns(4)
+        #     with col1:
+        #         if 'model' in metadata:
+        #             st.metric("Model", metadata['model'])
+        #     with col2:
+        #         if 'num_images' in metadata:
+        #             st.metric("Images", metadata['num_images'])
+        #     with col3:
+        #         if 'retry' in metadata:
+        #             st.metric("Retry", "Yes" if metadata['retry'] else "No")
+        #     with col4:
+        #         if 'random_fallback' in metadata:
+        #             st.metric("Fallback", "Yes" if metadata['random_fallback'] else "No")
+
+        # Display all prompts and response in full width without tabs
+        st.markdown("**System Prompt:**")
+        system_prompt = gpt_data.get('system_prompt', 'No system prompt recorded')
+        st.text_area("System Prompt Content", system_prompt, height=500)
+
+        st.markdown("**User Prompt:**")
+        user_prompt = gpt_data.get('user_prompt', 'No user prompt recorded')
+        st.text_area("User Prompt Content", user_prompt, height=300)
+
+        st.markdown("**GPT Response:**")
+        gpt_response = gpt_data.get('response', 'No response recorded')
+        st.text_area("GPT Response Content", gpt_response, height=200)
+
+
+def display_decision_agent_interaction(step_data):
+    """Display Decision Agent GPT input and output for a step"""
+    decision_data = step_data.get('decision_agent_interaction', {})
+
+    if decision_data:
+        st.markdown("#### Step 3: Look backward (global view)")
+
+        # Show response metadata first if available
+        if 'metadata' in decision_data:
+            metadata = decision_data['metadata']
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if 'model' in metadata:
+                    st.metric("Decision Model", metadata['model'])
+            with col2:
+                if 'num_images' in metadata:
+                    st.metric("Images Analyzed", metadata['num_images'])
+            with col3:
+                if 'method' in metadata:
+                    method_display = "Informed" if metadata['method'] == 'make_informed_decision' else "Standard"
+                    st.metric("Method", method_display)
+            with col4:
+                if 'code_analysis_used' in metadata:
+                    st.metric("Code Analysis", "Yes" if metadata['code_analysis_used'] else "No")
+
+        # Display images sent to decision agent if available
+        images_base64 = decision_data.get('images_base64', {})
+        if images_base64:
+            st.markdown("**Images Sent to Decision Agent:**")
+            # Organize images in rows
+            cols_per_row = 4
+            image_ids = sorted(images_base64.keys(), key=lambda x: int(x))
+
+            for i in range(0, len(image_ids), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j, col in enumerate(cols):
+                    if i + j < len(image_ids):
+                        img_id = image_ids[i + j]
+                        img_base64 = images_base64[img_id]
+
+                        with col:
+                            st.image(img_base64, caption=f"Decision Image {img_id}", use_container_width=True)
+
+        # Display all prompts and response in full width without tabs
+        st.markdown("**Decision Agent System Prompt:**")
+        system_prompt = decision_data.get('system_prompt', 'No system prompt recorded')
+        st.text_area("Decision Agent System Prompt Content", system_prompt, height=200, disabled=True, label_visibility="collapsed")
+
+        st.markdown("**Decision Agent User Prompt:**")
+        user_prompt = decision_data.get('user_prompt', 'No user prompt recorded')
+        st.text_area("Decision Agent User Prompt Content", user_prompt, height=400, disabled=True, label_visibility="collapsed")
+
+        st.markdown("**Decision Agent Response:**")
+        decision_response = decision_data.get('response', 'No response recorded')
+        st.text_area("Decision Agent Response Content", decision_response, height=300, disabled=True, label_visibility="collapsed")
+    else:
+        # Show when decision agent was not called
+        st.markdown("#### 🧠 Decision Agent Interaction")
+        st.info("Decision agent interaction data not available for this step")
+
+
 def display_navigation_steps(episode_info, episode_id):
-    
+
     steps = episode_info.get('steps', [])
     if not steps or len(steps) == 0:
         st.warning("No step data available")
         return
-    
+
     # Step selector - handle single step case
     if len(steps) == 1:
         step_index = 0
         st.info("Only one step available")
     else:
-        step_display = st.slider("Select Step", 1, len(steps), 1)
+        step_display = st.slider("Select Navigation Step Index", 1, len(steps), 1)
         step_index = step_display - 1  # Convert from 1-based to 0-based indexing
     step_data = steps[step_index]
-    
-    st.markdown(f"**Step {step_data['step_index']}**: {step_data.get('current_action', 'N/A')}")
-    
-    # Display viewpoints
+
+    # Display step information with sub-instructions and landmarks
+    st.markdown(f"**Current sub-instruction and landmarks**: {step_data.get('current_action', 'N/A')} {episode_info['landmarks'][step_data.get('current_action_idx', 0)]}")
+
+    # Display viewpoints first
     viewpoints = step_data.get('viewpoints', {})
     if viewpoints:
-        st.markdown("#### Viewpoint Images")
-        
+        st.markdown("#### Candidate Viewpoint Images")
+
         # Organize viewpoints in rows
         cols_per_row = 4
         viewpoint_ids = sorted(viewpoints.keys())
-        
+
         for i in range(0, len(viewpoint_ids), cols_per_row):
             cols = st.columns(cols_per_row)
             for j, col in enumerate(cols):
                 if i + j < len(viewpoint_ids):
                     vp_id = viewpoint_ids[i + j]
                     vp_data = viewpoints[vp_id]
-                    
+
                     with col:
                         # Determine label with checkmark for chosen viewpoint
                         if vp_data.get('is_chosen', False):
                             label = f"VP {vp_id} ✅"
                         else:
                             label = f"VP {vp_id}"
-                        
+
                         # Display RGB image from base64 or file path
                         if 'rgb_base64' in vp_data and vp_data['rgb_base64']:
                             # Use base64 image if available
@@ -99,6 +198,22 @@ def display_navigation_steps(episode_info, episode_id):
                                 st.image(str(rgb_path), caption=label, use_container_width=True)
                             except:
                                 st.error(f"Image not found: {vp_data['rgb_path']}")
+
+    display_gpt_interaction(step_data)
+
+    # Display estimation result between viewpoints and GPT interaction
+    estimation_result = step_data.get('estimation_result')
+    if estimation_result:
+        st.markdown("#### 🎯 Completion Estimation")
+        if estimation_result == "Yes":
+            st.success(f"✅ Estimation Result: **{estimation_result}** - Sub-instruction completed")
+        elif estimation_result == "No":
+            st.info(f"🔄 Estimation Result: **{estimation_result}** - Sub-instruction in progress")
+        else:
+            st.warning(f"❓ Estimation Result: **{estimation_result}** - Unexpected result")
+
+    # Display Decision Agent interaction
+    display_decision_agent_interaction(step_data)
     
 
 def display_episode_info(debug_data, stats_data, selected_episode_id):
@@ -122,7 +237,7 @@ def display_episode_info(debug_data, stats_data, selected_episode_id):
             st.info(f"Scene ID: {scene_name}")
         
         with col2:
-            st.text_area("Instruction", episode_info['instruction'], height=100)
+            st.text_area("Overall Instruction", episode_info['instruction'], height=100)
         
         # Display metrics if available
         if stats_data and selected_episode_id in stats_data:
@@ -158,7 +273,22 @@ def display_episode_info(debug_data, stats_data, selected_episode_id):
                 metrics_df = pd.DataFrame([metrics])
                 st.dataframe(metrics_df, use_container_width=True)
         
+        # Display sub-instructions with landmarks
+        st.markdown("### Step 1: Look forward (global view)")
+        if 'sub_instructions' in episode_info and 'landmarks' in episode_info:
+            sub_instructions = episode_info['sub_instructions']
+            landmarks = episode_info['landmarks']
+
+            if isinstance(sub_instructions, list) and isinstance(landmarks, list):
+                for i, instruction in enumerate(sub_instructions):
+                    st.markdown(f"{instruction} {landmarks[i]}")
+            else:
+                st.warning("Sub-instructions or landmarks data not available or in unexpected format")
+        else:
+            st.warning("Sub-instructions and landmarks data not found in episode info")
+
         # Display step-by-step navigation if available
+        st.markdown("### Step 2: Look now (local view)")
         if 'steps' in episode_info and episode_info['steps']:
             display_navigation_steps(episode_info, selected_episode_id)
 

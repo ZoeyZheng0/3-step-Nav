@@ -97,28 +97,53 @@ class Open_Nav():
         return effective_prediction, thought_list, break_flag
     
     def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):
+        # Capture system and user prompts for debug visualization
+        system_prompt = MAPGPT_NAVIGATOR['system']
+        user_prompt = MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation)
+
+        # Store GPT interaction data for visualization
+        gpt_interaction = {
+            'system_prompt': system_prompt,
+            'user_prompt': user_prompt,
+            'response': None,
+            'metadata': {
+                'model': getattr(self.llm, 'model', 'unknown'),
+                'num_images': len(images) if images else 0
+            }
+        }
+
         decision_reasoning = self.llm.gpt_infer_with_images(
-            MAPGPT_NAVIGATOR['system'],
-            MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation),
+            system_prompt,
+            user_prompt,
             images=images)
+
+        # Update with response
+        gpt_interaction['response'] = decision_reasoning
+
         decision_reasoning = decision_reasoning.replace("**", "")
         if "Prediction:" not in decision_reasoning:
             logger.error(f"No Prediction in decision reasoning")
             # Try again
             decision_reasoning = self.llm.gpt_infer_with_images(
-                MAPGPT_NAVIGATOR['system'],
-                MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation),
+                system_prompt,
+                user_prompt,
                 images=images)
+
+            # Update with retry response
+            gpt_interaction['response'] = decision_reasoning
+            gpt_interaction['metadata']['retry'] = True
+
             decision_reasoning = decision_reasoning.replace("**", "")
             if "Prediction:" not in decision_reasoning:
                 next_vp, observe_description = random.choice(list(observe_dict.items()))
                 logger.warning(f"Random choice a next predicted action {next_vp}")
-                return next_vp, observe_description
-            
+                gpt_interaction['metadata']['random_fallback'] = True
+                return next_vp, observe_description, gpt_interaction
+
         logger.info(decision_reasoning)
         pred_thought = decision_reasoning.split("Prediction:")[0].strip()
         pred_vp = decision_reasoning.split("Prediction:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
-        return pred_vp, pred_thought
+        return pred_vp, pred_thought, gpt_interaction
     
     # =========================
     # ===== Test Decision =====
@@ -185,14 +210,33 @@ class Open_Nav():
             chosen_images: list of PIL.Image RGB images (in order of visitation)
             instruction: the navigation instruction
         Returns:
-            LLM response with 'judgement', 'confidence', and 'reasoning'.
+            Tuple of (judgement, confidence, reasoning, judge_interaction)
             Judgement can be 'Yes', 'Stay', 'Backtrack', or 'Look Around'.
             Confidence is a score from 0-10.
+            judge_interaction contains the prompts and response for visualization.
         """
+        # Capture system and user prompts for debug visualization
         system_prompt = JUDGE_PROMPT['system']
         user_prompt = JUDGE_PROMPT['user'].format(instruction)
         images_dict = {str(i): {'rgb': img} for i, img in enumerate(chosen_images)}
+
+        # Store judge interaction data for visualization
+        judge_interaction = {
+            'system_prompt': system_prompt,
+            'user_prompt': user_prompt,
+            'response': None,
+            'metadata': {
+                'model': getattr(self.llm, 'model', 'unknown'),
+                'num_images': len(chosen_images),
+                'instruction': instruction
+            }
+        }
+
         response = self.llm.gpt_infer_with_images(system_prompt, user_prompt, images_dict)
+
+        # Update with response
+        judge_interaction['response'] = response
+
         logger.info(f"Instruction: {instruction} \nLength of chosen images: {len(chosen_images)} \n{response}")
 
         response = response.replace("**", "")
@@ -209,14 +253,14 @@ class Open_Nav():
         
         if "Judgement:" not in response:
             logger.error(f"No Judgement in response")
-            return "Yes", confidence, "None"
-        
+            return "Yes", confidence, "None", judge_interaction
+
         # Extract reasoning and judgement
         parts = response.split("Judgement:")
         if len(parts) >= 2:
             reasoning_part = parts[0].strip()
             judgement_part = parts[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
-            
+
             # Extract reasoning (everything before Confidence)
             if "Confidence:" in reasoning_part:
                 reasoning = reasoning_part.split("Confidence:")[0].strip()
@@ -225,8 +269,8 @@ class Open_Nav():
         else:
             reasoning = "None"
             judgement_part = "Yes"
-        
-        return judgement_part, confidence, reasoning
+
+        return judgement_part, confidence, reasoning, judge_interaction
     
     def look_around(self, logger, current_step, images_dict, instruction, landmarks, history_traj):
         """
