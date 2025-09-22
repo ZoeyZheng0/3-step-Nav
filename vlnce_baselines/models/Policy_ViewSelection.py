@@ -256,7 +256,16 @@ class CMANet(Net):
                     for bi in range(v.size(0)):
                         ra_count = (NUM_IMGS - a_count)%NUM_IMGS
                         depth_batch[ra_count+bi*NUM_IMGS] = v[bi]
-                        rgb_batch[ra_count+bi*NUM_IMGS] = observations[k.replace('depth','rgb')][bi]
+                        # Resize RGB only when size doesn't match model requirements
+                        rgb_input = observations[k.replace('depth','rgb')][bi]
+                        if rgb_input.shape[:2] != (224, 224):
+                            # Resize from current size to 224x224 for model compatibility
+                            rgb_resized = F.interpolate(rgb_input.unsqueeze(0).permute(0,3,1,2).float(),
+                                                      size=(224, 224), mode='bilinear', align_corners=False)
+                            rgb_batch[ra_count+bi*NUM_IMGS] = rgb_resized.squeeze(0).permute(1,2,0).byte()
+                        else:
+                            # Already correct size, use directly
+                            rgb_batch[ra_count+bi*NUM_IMGS] = rgb_input
                     a_count += 1
 
             obs_view12 = {}

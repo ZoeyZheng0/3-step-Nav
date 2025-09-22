@@ -159,7 +159,21 @@ def display_navigation_steps(episode_info, episode_id):
     step_data = steps[step_index]
 
     # Display step information with sub-instructions and landmarks
-    st.markdown(f"**Current sub-instruction and landmarks**: {step_data.get('current_action', 'N/A')} {episode_info['landmarks'][step_data.get('current_action_idx', 0)]}")
+    current_action = step_data.get('current_action', 'N/A')
+    current_landmarks = step_data.get('current_landmarks', [])
+
+    # Format landmarks display
+    landmarks_text = ""
+    if current_landmarks:
+        if isinstance(current_landmarks, list):
+            landmarks_text = " | ".join([landmark.strip() for landmark in current_landmarks if landmark.strip()])
+        else:
+            landmarks_text = str(current_landmarks)
+
+    if landmarks_text:
+        st.markdown(f"**Current sub-instruction and landmarks**: {current_action} | {landmarks_text}")
+    else:
+        st.markdown(f"**Current sub-instruction and landmarks**: {current_action} (No landmarks specified)")
 
     # Display viewpoints first
     viewpoints = step_data.get('viewpoints', {})

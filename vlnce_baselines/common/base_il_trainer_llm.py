@@ -526,10 +526,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             observation, observe_dict = navigator.observe_environment(nav_logger, current_step, images_dict)
             
             # Prepare step data for debug.json
+            current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else []
             step_data = {
                 "step_index": current_step,
                 "viewpoints": {},
-                "current_action": action_list[current_action_idx] if current_action_idx < len(action_list) else "Finishing"
+                "current_action": action_list[current_action_idx] if current_action_idx < len(action_list) else "Finishing",
+                "current_landmarks": current_landmarks
             }
             
             # Store all viewpoint images with base64 encoding and mark candidates

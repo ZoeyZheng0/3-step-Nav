@@ -121,7 +121,7 @@ class llmClient:
                     "type": "image_url",
                     "image_url": {
                         "url": image_base64_url,
-                        # "detail": "low"
+                        "detail": "high"
                     }
                 }
                 user_content.append(image_message)
