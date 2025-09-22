@@ -554,7 +554,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                next_vp, thought, completion_estimation, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+
+                # Determine next instruction - use 'Stop.' if current is the last instruction
+                if current_action_idx + 1 < len(action_list):
+                    next_instruction = action_list[current_action_idx + 1]
+                else:
+                    next_instruction = 'Stop.'
+
+                next_vp, thought, completion_estimation, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict, next_instruction)
 
                 # Update step data with chosen viewpoint and GPT interaction
                 step_data["chosen_viewpoint"] = next_vp

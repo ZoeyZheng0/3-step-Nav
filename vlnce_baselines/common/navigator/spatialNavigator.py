@@ -110,10 +110,14 @@ class Open_Nav():
 
         return effective_prediction, thought_list, completion_estimations, break_flag
     
-    def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):
+    def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None, next_instruction=None):
+        # Set default next instruction if not provided
+        if next_instruction is None:
+            next_instruction = 'Stop.'
+
         # Capture system and user prompts for debug visualization
         system_prompt = MAPGPT_NAVIGATOR['system']
-        user_prompt = MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, observation)
+        user_prompt = MAPGPT_NAVIGATOR['user'].format(observe_dict.keys(), instruction, landmarks, history_traj, next_instruction, observation)
 
         # Store GPT interaction data for visualization
         gpt_interaction = {

@@ -100,11 +100,11 @@ MAPGPT_NAVIGATOR = {
             Your decision is very important, must make it very carefully. \
             You need to double check the output in \"Prediction:\". The output must be in the Candidate Viewpoint IDs without any other words. \
             You also need to double check the output in \"Thought\". The output must be a single paragraph. \
-            After all the above steps, you need to estimate the completion of the instruction based on the 'Instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images. \
-            Please think carefully about the 'Distance' when you estimate the completion of the instruction. If your current distance to the destination is far, you should answer 'No' and continue moving and try to stop within 1 meter of the destination. \
-            If your current distance to the destination is within 1 meter, you should answer 'Yes' and stop moving.",
-    'user': "Candidate Viewpoint IDs List: [{}] Instruction: {} Landmarks: {} Navigation History: {} " \
-            "Current Environment: {} -> Thought: ... Distance: ... Prediction: ... Completion Estimation: ... "
+            After finished all the above steps, you need to estimate the completion of the instruction based on the 'Instruction', 'Next instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images. \
+            Please think carefully about the 'Distance' when you estimate the completion of the instruction. If your current distance to the destination is very far, you should answer 'No'. \
+            If your current distance to the destination is close and you think you are ready to walk towards the landmarks of next instruction, you should answer 'Yes'.",
+    'user': "Candidate Viewpoint IDs List: [{}] Instruction: {} Landmarks: {} Navigation History: {} Next instruction: {} \
+            Current Environment: {} -> Thought: ... Distance: ... Prediction: ... Completion Estimation: ... "
 }
 
 # Thought Fusion
