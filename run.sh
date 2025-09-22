@@ -17,7 +17,7 @@ gpu_id=3
 
 flag="--exp_name $exp_name
       --exp-config run_OpenNav.yaml
-      --llm gpt-4o-2024-08-06
+      --llm gpt-5-2025-08-07
       --api_key your-api-key
       --episodes_to_load $episodes_to_load
       SIMULATOR_GPU_IDS [0]

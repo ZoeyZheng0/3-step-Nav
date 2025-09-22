@@ -553,20 +553,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
                 next_vp, thought, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
-                # print(images_dict)
 
                 # Update step data with chosen viewpoint and GPT interaction
                 step_data["chosen_viewpoint"] = next_vp
                 step_data["gpt_interaction"] = gpt_interaction
                 if next_vp in step_data["viewpoints"]:
                     step_data["viewpoints"][next_vp]["is_chosen"] = True
-                
-                # Save images for this step
-                episode_image_dir = os.path.join(config.RESULTS_DIR, "episode_images", str(current_episodes[0].episode_id))
-                os.makedirs(episode_image_dir, exist_ok=True)
-                
-                # Image saving is now handled via base64 storage in JSON
-                nav_logger.info(f"Images stored in base64 format for step {current_step}")
                 
                 # Add step data to episode info
                 episode_info["steps"].append(step_data)

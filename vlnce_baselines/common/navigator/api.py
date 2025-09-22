@@ -38,10 +38,10 @@ class llmClient:
             api_key (str): API key for OpenAI (if using GPT)
         '''
         # Configure based on model type
-        if model_type == "gpt-4o-2024-08-06":
+        if model_type in ["gpt-4o-2024-08-06", "gpt-5-2025-08-07"]:
             self.model = model_type
             self.client = OpenAI(api_key=api_key)
-            
+
         elif model_type == "Qwen/Qwen2-72B":
             self.model = model_type
             self.client = OpenAI(
@@ -65,12 +65,15 @@ class llmClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
-        
+
         request_params = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0
-        }       
+        }
+
+        # Only add temperature for models that support it
+        if self.model != "gpt-5-2025-08-07":
+            request_params["temperature"] = 0       
         
         if num_output == 1:
             chat_response = self._completion_with_backoff(**request_params)
@@ -131,8 +134,11 @@ class llmClient:
         request_params = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0
         }
+
+        # Only add temperature for models that support it
+        if self.model != "gpt-5-2025-08-07":
+            request_params["temperature"] = 0
 
         if num_output == 1:
             chat_response = self._completion_with_backoff(**request_params)

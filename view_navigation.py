@@ -71,15 +71,12 @@ def display_gpt_interaction(step_data):
         #             st.metric("Fallback", "Yes" if metadata['random_fallback'] else "No")
 
         # Display all prompts and response in full width without tabs
-        st.markdown("**System Prompt:**")
         system_prompt = gpt_data.get('system_prompt', 'No system prompt recorded')
         st.text_area("System Prompt Content", system_prompt, height=500)
 
-        st.markdown("**User Prompt:**")
         user_prompt = gpt_data.get('user_prompt', 'No user prompt recorded')
         st.text_area("User Prompt Content", user_prompt, height=300)
 
-        st.markdown("**GPT Response:**")
         gpt_response = gpt_data.get('response', 'No response recorded')
         st.text_area("GPT Response Content", gpt_response, height=200)
 
@@ -130,15 +127,15 @@ def display_decision_agent_interaction(step_data):
         # Display all prompts and response in full width without tabs
         st.markdown("**Decision Agent System Prompt:**")
         system_prompt = decision_data.get('system_prompt', 'No system prompt recorded')
-        st.text_area("Decision Agent System Prompt Content", system_prompt, height=200, disabled=True, label_visibility="collapsed")
+        st.text_area("Decision Agent System Prompt Content", system_prompt, height=200)
 
         st.markdown("**Decision Agent User Prompt:**")
         user_prompt = decision_data.get('user_prompt', 'No user prompt recorded')
-        st.text_area("Decision Agent User Prompt Content", user_prompt, height=400, disabled=True, label_visibility="collapsed")
+        st.text_area("Decision Agent User Prompt Content", user_prompt, height=400)
 
         st.markdown("**Decision Agent Response:**")
         decision_response = decision_data.get('response', 'No response recorded')
-        st.text_area("Decision Agent Response Content", decision_response, height=300, disabled=True, label_visibility="collapsed")
+        st.text_area("Decision Agent Response Content", decision_response, height=300)
     else:
         # Show when decision agent was not called
         st.markdown("#### 🧠 Decision Agent Interaction")
@@ -167,7 +164,7 @@ def display_navigation_steps(episode_info, episode_id):
     # Display viewpoints first
     viewpoints = step_data.get('viewpoints', {})
     if viewpoints:
-        st.markdown("#### Candidate Viewpoint Images")
+        st.markdown("##### Input candidate viewpoints")
 
         # Organize viewpoints in rows
         cols_per_row = 4
