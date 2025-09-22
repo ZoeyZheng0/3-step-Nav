@@ -87,7 +87,7 @@ MAPGPT_NAVIGATOR = {
             You are encouraged to move to new viewpoints to explore environment while avoid revisiting accessed viewpoints in non-essential situations. \
             For each provided image of the places, you should combine the 'Instruction' and carefully examine the relevant information, such as scene descriptions, landmarks, and objects. You need to align 'Instruction' with 'History' (including corresponding images) to estimate your instruction execution progress. \
             If you can already see the destination, estimate the distance between you and it. If the distance is far, continue moving and try to stop within 1 meter of the destination. \
-            Your answer includes three parts: \"Thought\", \"Distance\" and \"Prediction\". In the \"Thought\", you should think as detailed as possible following procedures: \
+            Your answer includes three parts: \"Thought\", \"Distance\", \"Prediction\" and \"Completion Estimation\". In the \"Thought\", you should think as detailed as possible following procedures: \
             (1) The viewpoint ID you predicted must be one of the Direction Viewpoint ID in Candidate Viewpoint IDs List. The Candidate Viewpoint IDs List show the Direction Viewpoint ID that you should go. This means that there should be only a number after \"Prediction\" without any other words or characters . \
             (2) Analyze which direction in the current environment is most suitable to execute the instruction and explain your reason. \
             (3) You need to combine 'Instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images to think about what to do next and why, and complete your thinking into 'Thought'. \
@@ -99,9 +99,12 @@ MAPGPT_NAVIGATOR = {
             Then, please make decision on the next viewpoint in the \"Prediction\". \
             Your decision is very important, must make it very carefully. \
             You need to double check the output in \"Prediction:\". The output must be in the Candidate Viewpoint IDs without any other words. \
-            You also need to double check the output in \"Thought\". The output must be a single paragraph",
-    'user': "Candidate Viewpoint IDs List: [{}] Instruction: {} Landmarks: {} Navigation History: {} \
-            Current Environment: {} -> Thought: ... Distance: ... Prediction: ... "
+            You also need to double check the output in \"Thought\". The output must be a single paragraph. \
+            After all the above steps, you need to estimate the completion of the instruction based on the 'Instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images. \
+            Please think carefully about the 'Distance' when you estimate the completion of the instruction. If your current distance to the destination is far, you should answer 'No' and continue moving and try to stop within 1 meter of the destination. \
+            If your current distance to the destination is within 1 meter, you should answer 'Yes' and stop moving.",
+    'user': "Candidate Viewpoint IDs List: [{}] Instruction: {} Landmarks: {} Navigation History: {} " \
+            "Current Environment: {} -> Thought: ... Distance: ... Prediction: ... Completion Estimation: ... "
 }
 
 # Thought Fusion

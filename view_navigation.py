@@ -78,7 +78,7 @@ def display_gpt_interaction(step_data):
         st.text_area("User Prompt Content", user_prompt, height=300)
 
         gpt_response = gpt_data.get('response', 'No response recorded')
-        st.text_area("GPT Response Content", gpt_response, height=200)
+        st.text_area("GPT Response Content", gpt_response, height=250)
 
 
 def display_decision_agent_interaction(step_data):
@@ -211,17 +211,6 @@ def display_navigation_steps(episode_info, episode_id):
                                 st.error(f"Image not found: {vp_data['rgb_path']}")
 
     display_gpt_interaction(step_data)
-
-    # Display estimation result between viewpoints and GPT interaction
-    estimation_result = step_data.get('estimation_result')
-    if estimation_result:
-        st.markdown("#### 🎯 Completion Estimation")
-        if estimation_result == "Yes":
-            st.success(f"✅ Estimation Result: **{estimation_result}** - Sub-instruction completed")
-        elif estimation_result == "No":
-            st.info(f"🔄 Estimation Result: **{estimation_result}** - Sub-instruction in progress")
-        else:
-            st.warning(f"❓ Estimation Result: **{estimation_result}** - Unexpected result")
 
     # Display Decision Agent interaction
     display_decision_agent_interaction(step_data)

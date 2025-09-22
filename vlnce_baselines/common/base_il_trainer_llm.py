@@ -554,7 +554,7 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                                 
                 nav_logger.info("========== Next Action Prediction ==========")
                 # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-                next_vp, thought, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
+                next_vp, thought, completion_estimation, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict)
 
                 # Update step data with chosen viewpoint and GPT interaction
                 step_data["chosen_viewpoint"] = next_vp
@@ -607,16 +607,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 history_traj = navigator.review_history(nav_logger, nav_history) if len(nav_history) > 0 else "Step 0 start position. "
 
                 nav_logger.info("========== Estimate Completion Progress ==========")
-                current_action = action_list[current_action_idx] if current_action_idx < len(action_list) else ""
-                current_landmarks = landmark_list[current_action_idx] if current_action_idx < len(landmark_list) else ""
-                # Pass current_action as the instruction to estimate, and current_landmarks as landmarks
-                estimation = navigator.estimate_completion(nav_logger, current_action, current_landmarks, history_traj)
-                nav_logger.info(f"Completion estimation result: '{estimation}'")
+                nav_logger.info(f"Completion estimation result: '{completion_estimation}'")
 
                 # Add estimation result to step data (between viewpoint images and GPT interaction)
-                step_data["estimation_result"] = estimation
+                step_data["estimation_result"] = completion_estimation
 
-                if estimation == "Yes":
+                if completion_estimation == "Yes":
                     # Use Decision Agent to determine next action
                     nav_logger.info("========== Navigation Decision Agent ==========")
                     
@@ -725,13 +721,13 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                         nav_logger.info("Agent determined navigation should stop")
                         stop_flag = True
 
-                elif estimation == "No":
+                elif completion_estimation == "No":
                     nav_logger.info("Instruction not yet completed - continuing with current instruction")
                     # Skip decision agent visualization when estimation is "No"
                     nav_logger.info("Skipping decision agent visualization - continuing with standard navigation")
 
                 else:
-                    nav_logger.error(f"Unexpected estimation result: {estimation}")
+                    nav_logger.error(f"Unexpected estimation result: {completion_estimation}")
 
             try:
                 if not stop_flag:

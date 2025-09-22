@@ -43,6 +43,7 @@ class Open_Nav():
         observation = f"Direction {direction} " + self.llm.gpt_infer(OBSERVATION_SUMMARY['system'], OBSERVATION_SUMMARY['user'].format(curr_observe))
         # ===== get thought summary =====
         thought = self.llm.gpt_infer(THOUGHT_SUMMARY['system'], THOUGHT_SUMMARY['user'].format(thought))
+        thought = thought.replace("Thought: ", "")
         # ===== get nav history =====
         nav_history.append({
             "step": current_step,
@@ -75,7 +76,7 @@ class Open_Nav():
     def move_to_next_vp(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):    
         break_flag = True
         for i in range(2): # retry twice
-            effective_prediction, thought_list = [], []
+            effective_prediction, thought_list, completion_estimations = [], [], []
             # batch_responses = self.llm.gpt_infer(NAVIGATOR['system'], 
             #                                       NAVIGATOR['user'].format(observe_dict.keys(), current_step, instruction,
             #                                                                actions, landmarks, history_traj, estimation, observation),
@@ -90,11 +91,24 @@ class Open_Nav():
                     continue
                 logger.info(f"================retry id {i} in pred_vp==========")
                 logger.info(decision_reasoning)
+
+                # Parse the unified response with completion estimation
                 pred_thought = decision_reasoning.split("Prediction:")[0].strip()
-                pred_vp = decision_reasoning.split("Prediction:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+                remaining_text = decision_reasoning.split("Prediction:")[1].strip()
+
+                # Extract prediction and completion estimation
+                if "Completion Estimation:" in remaining_text:
+                    pred_vp = remaining_text.split("Completion Estimation:")[0].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+                    completion_est = remaining_text.split("Completion Estimation:")[1].strip()
+                else:
+                    pred_vp = remaining_text.replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+                    completion_est = "Unknown"
+
                 effective_prediction.append(pred_vp)
                 thought_list.append(pred_thought)
-        return effective_prediction, thought_list, break_flag
+                completion_estimations.append(completion_est)
+
+        return effective_prediction, thought_list, completion_estimations, break_flag
     
     def move_to_next_vp_single(self, logger, instruction, landmarks, history_traj, observation, observe_dict, images=None):
         # Capture system and user prompts for debug visualization
@@ -141,9 +155,20 @@ class Open_Nav():
                 return next_vp, observe_description, gpt_interaction
 
         logger.info(decision_reasoning)
+
+        # Parse the unified response with completion estimation
         pred_thought = decision_reasoning.split("Prediction:")[0].strip()
-        pred_vp = decision_reasoning.split("Prediction:")[1].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
-        return pred_vp, pred_thought, gpt_interaction
+        remaining_text = decision_reasoning.split("Prediction:")[1].strip()
+
+        # Extract prediction and completion estimation
+        if "Completion Estimation:" in remaining_text:
+            pred_vp = remaining_text.split("Completion Estimation:")[0].strip().replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+            completion_est = remaining_text.split("Completion Estimation:")[1].strip()
+        else:
+            pred_vp = remaining_text.replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
+            completion_est = "Unknown"
+
+        return pred_vp, pred_thought, completion_est, gpt_interaction
     
     # =========================
     # ===== Test Decision =====
