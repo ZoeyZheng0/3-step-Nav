@@ -37,12 +37,24 @@ def load_experiment_data(experiment_name):
         with open(debug_path, 'r') as f:
             experiment_data['debug'] = json.load(f)
     
-    # Load stats json file
+    # Load stats json file - check both original and running stats files
     stats_files = list((EVAL_RESULTS_DIR / experiment_name).glob("stats_ep_ckpt_*.json"))
+    running_stats_files = list((EVAL_RESULTS_DIR / experiment_name).glob("stats_ckpt_*_running.json"))
+    episode_results_files = list((EVAL_RESULTS_DIR / experiment_name).glob("episode_results_*.json"))
+
     if stats_files:
-        # Use the first stats file found
+        # Use the original stats file (final results)
         with open(stats_files[0], 'r') as f:
             experiment_data['stats'] = json.load(f)
+    elif running_stats_files:
+        # Fallback to running stats file (incremental results)
+        with open(running_stats_files[0], 'r') as f:
+            experiment_data['stats'] = json.load(f)
+
+    # Load individual episode results if available
+    if episode_results_files:
+        with open(episode_results_files[0], 'r') as f:
+            experiment_data['episode_results'] = json.load(f)
     
     return experiment_data
 
@@ -240,7 +252,7 @@ def display_episode_info(debug_data, stats_data, selected_episode_id):
             st.text_area("Overall Instruction", episode_info['instruction'], height=100)
         
         # Display metrics if available
-        if stats_data and selected_episode_id in stats_data:
+        if stats_data and ('episodes_evaluated' not in stats_data) and selected_episode_id in stats_data:
             st.markdown("### 📊 Episode Metrics")
             metrics = stats_data[selected_episode_id]
             
@@ -292,19 +304,30 @@ def display_episode_info(debug_data, stats_data, selected_episode_id):
         if 'steps' in episode_info and episode_info['steps']:
             display_navigation_steps(episode_info, selected_episode_id)
 
-def display_experiment_summary(debug_data, stats_data):
+def display_experiment_summary(debug_data, stats_data, episode_results_data=None, selected_episode_id=None):
     """Display overall experiment summary"""
-    st.subheader("📈 Experiment Summary")
-    
+    st.markdown("#### Experiment Summary")
+
     if stats_data:
-        # Calculate aggregate metrics
-        total_episodes = len(stats_data)
-        successful_episodes = sum(1 for m in stats_data.values() if m.get('success', 0) == 1)
-        oracle_successful_episodes = sum(1 for m in stats_data.values() if m.get('oracle_success', 0) == 1)
-        avg_spl = np.mean([m.get('spl', 0) for m in stats_data.values()])
-        avg_ndtw = np.mean([m.get('ndtw', 0) for m in stats_data.values()])
-        avg_steps = np.mean([m.get('steps_taken', 0) for m in stats_data.values()])
-        avg_distance = np.mean([m.get('distance_to_goal', 0) for m in stats_data.values()])
+        # Check if stats_data is aggregated (single dict) or individual episodes (dict of dicts)
+        if 'episodes_evaluated' in stats_data:
+            # This is aggregated running stats
+            total_episodes = stats_data.get('episodes_evaluated', 0)
+            successful_episodes = int(stats_data.get('success', 0) * total_episodes)
+            oracle_successful_episodes = int(stats_data.get('oracle_success', 0) * total_episodes)
+            avg_spl = stats_data.get('spl', 0)
+            avg_ndtw = stats_data.get('ndtw', 0)
+            avg_steps = stats_data.get('steps_taken', 0)
+            avg_distance = stats_data.get('distance_to_goal', 0)
+        else:
+            # This is individual episode data
+            total_episodes = len(stats_data)
+            successful_episodes = sum(1 for m in stats_data.values() if m.get('success', 0) == 1)
+            oracle_successful_episodes = sum(1 for m in stats_data.values() if m.get('oracle_success', 0) == 1)
+            avg_spl = np.mean([m.get('spl', 0) for m in stats_data.values()])
+            avg_ndtw = np.mean([m.get('ndtw', 0) for m in stats_data.values()])
+            avg_steps = np.mean([m.get('steps_taken', 0) for m in stats_data.values()])
+            avg_distance = np.mean([m.get('distance_to_goal', 0) for m in stats_data.values()])
         
         # Display summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -338,76 +361,174 @@ def display_experiment_summary(debug_data, stats_data):
             )
             st.plotly_chart(fig, use_container_width=True)
         
-        # Episode metrics visualization
-        st.markdown("### 📊 Episode Metrics Distribution")
-        
-        # Create dataframe for visualization
-        episodes_list = []
-        for ep_id, metrics in stats_data.items():
-            episodes_list.append({
-                'Episode ID': ep_id,
-                'Success': metrics.get('success', 0),
-                'Oracle Success': metrics.get('oracle_success', 0),
-                'SPL': metrics.get('spl', 0),
-                'NDTW': metrics.get('ndtw', 0),
-                'Steps': metrics.get('steps_taken', 0),
-                'Distance to Goal': metrics.get('distance_to_goal', 0),
-                'Path Length': metrics.get('path_length', 0)
-            })
-        
-        episodes_df = pd.DataFrame(episodes_list)
-        
-        # Create visualizations
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # SPL distribution
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(
-                x=episodes_df['SPL'],
-                nbinsx=20,
-                name='SPL Distribution',
-                marker_color='blue'
-            ))
-            fig.update_layout(
-                title="SPL Distribution",
-                xaxis_title="SPL",
-                yaxis_title="Count",
-                height=300
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Distance to goal distribution
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(
-                x=episodes_df['Distance to Goal'],
-                nbinsx=20,
-                name='Distance Distribution',
-                marker_color='green'
-            ))
-            fig.update_layout(
-                title="Distance to Goal Distribution",
-                xaxis_title="Distance (m)",
-                yaxis_title="Count",
-                height=300
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Full episode table
-        with st.expander("View All Episodes"):
-            st.dataframe(
-                episodes_df.style.format({
-                    'Success': lambda x: '✅' if x == 1 else '❌',
-                    'Oracle Success': lambda x: '✅' if x == 1 else '❌',
-                    'SPL': '{:.3f}',
-                    'NDTW': '{:.3f}',
-                    'Steps': '{:.0f}',
-                    'Distance to Goal': '{:.2f}',
-                    'Path Length': '{:.2f}'
-                }),
-                use_container_width=True
-            )
+        # Episode metrics visualization - only for individual episode data
+        if 'episodes_evaluated' not in stats_data:
+            st.markdown("### 📊 Episode Metrics Distribution")
+
+            # Create dataframe for visualization
+            episodes_list = []
+            for ep_id, metrics in stats_data.items():
+                episodes_list.append({
+                    'Episode ID': ep_id,
+                    'Success': metrics.get('success', 0),
+                    'Oracle Success': metrics.get('oracle_success', 0),
+                    'SPL': metrics.get('spl', 0),
+                    'NDTW': metrics.get('ndtw', 0),
+                    'Steps': metrics.get('steps_taken', 0),
+                    'Distance to Goal': metrics.get('distance_to_goal', 0),
+                    'Path Length': metrics.get('path_length', 0)
+                })
+
+            episodes_df = pd.DataFrame(episodes_list)
+
+            # Create visualizations
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # SPL distribution
+                fig = go.Figure()
+                fig.add_trace(go.Histogram(
+                    x=episodes_df['SPL'],
+                    nbinsx=20,
+                    name='SPL Distribution',
+                    marker_color='blue'
+                ))
+                fig.update_layout(
+                    title="SPL Distribution",
+                    xaxis_title="SPL",
+                    yaxis_title="Count",
+                    height=300
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                # Distance to goal distribution
+                fig = go.Figure()
+                fig.add_trace(go.Histogram(
+                    x=episodes_df['Distance to Goal'],
+                    nbinsx=20,
+                    name='Distance Distribution',
+                    marker_color='green'
+                ))
+                fig.update_layout(
+                    title="Distance to Goal Distribution",
+                    xaxis_title="Distance (m)",
+                    yaxis_title="Count",
+                    height=300
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Full episode table
+            with st.expander("View All Episodes"):
+                st.dataframe(
+                    episodes_df.style.format({
+                        'Success': lambda x: '✅' if x == 1 else '❌',
+                        'Oracle Success': lambda x: '✅' if x == 1 else '❌',
+                        'SPL': '{:.3f}',
+                        'NDTW': '{:.3f}',
+                        'Steps': '{:.0f}',
+                        'Distance to Goal': '{:.2f}',
+                        'Path Length': '{:.2f}'
+                    }),
+                    use_container_width=True
+                )
+        else:
+            if debug_data and 'episodes' in debug_data and selected_episode_id is not None:
+                episodes = debug_data['episodes']
+                episode_ids = [ep.get('episode_id') for ep in episodes]
+
+                if selected_episode_id in episode_ids:
+                    # Try to get metrics from episode_results first, fallback to debug data
+                    episode_metrics = None
+                    episode_results = episode_results_data or {}
+
+                    if str(selected_episode_id) in episode_results:
+                        episode_metrics = episode_results[str(selected_episode_id)]
+
+                    if episode_metrics:
+                        st.markdown(f"#### Episode {selected_episode_id} - Performance Metrics")
+
+                        # Display metrics in the same layout as experiment summary
+                        col1, col2, col3, col4 = st.columns(4)
+
+                        with col1:
+                            success = episode_metrics.get('success', 0)
+                            oracle_success = episode_metrics.get('oracle_success', 0)
+                            st.metric("Success", "✅ Yes" if success == 1 else "❌ No")
+                            st.metric("Oracle Success", "✅ Yes" if oracle_success == 1 else "❌ No")
+
+                        with col2:
+                            spl = episode_metrics.get('spl', 0)
+                            ndtw = episode_metrics.get('ndtw', 0)
+                            st.metric("SPL", f"{spl:.3f}")
+                            st.metric("NDTW", f"{ndtw:.3f}")
+
+                        with col3:
+                            steps_taken = episode_metrics.get('steps_taken', 0)
+                            distance_to_goal = episode_metrics.get('distance_to_goal', 0)
+                            st.metric("Steps Taken", f"{steps_taken:.0f}")
+                            st.metric("Distance to Goal", f"{distance_to_goal:.2f}m")
+
+                        with col4:
+                            path_length = episode_metrics.get('path_length', 0)
+                            collisions = episode_metrics.get('collisions', 0)
+                            st.metric("Path Length", f"{path_length:.2f}m")
+                            st.metric("Collisions", f"{collisions:.3f}")
+
+                        # Episode details table
+                        with st.expander("📋 Detailed Metrics Table"):
+                            metrics_df = pd.DataFrame([episode_metrics])
+                            st.dataframe(
+                                metrics_df.style.format({
+                                    'success': lambda x: '✅ Success' if x == 1 else '❌ Failure',
+                                    'oracle_success': lambda x: '✅ Success' if x == 1 else '❌ Failure',
+                                    'spl': '{:.4f}',
+                                    'ndtw': '{:.4f}',
+                                    'steps_taken': '{:.0f}',
+                                    'distance_to_goal': '{:.3f}',
+                                    'path_length': '{:.3f}',
+                                    'collisions': '{:.3f}'
+                                }),
+                                use_container_width=True
+                            )
+                    else:
+                        st.warning(f"⚠️ Metrics not available for Episode {selected_episode_id}")
+                        st.info("Episode metrics will be available after the episode completes evaluation.")
+                else:
+                    st.warning("No episodes found in debug data")
+            else:
+                st.info("💡 Individual episode metrics will be available when evaluation completes with detailed results.")
+    else:
+        # Show basic info when only debug data is available
+        st.info("📊 **Evaluation Status**: In Progress or Stats Not Available")
+
+        if debug_data and 'episodes' in debug_data:
+            episodes = debug_data['episodes']
+            total_episodes = len(episodes)
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric("Episodes in Debug Data", total_episodes)
+
+                # Show episode completion status
+                completed_steps = sum(len(ep.get('steps', [])) for ep in episodes)
+                st.metric("Total Steps Recorded", completed_steps)
+
+            with col2:
+                # Show experiment info
+                exp_name = debug_data.get('experiment_name', 'Unknown')
+                st.metric("Experiment Name", exp_name)
+
+                # Show last episode info if available
+                if episodes:
+                    last_ep = episodes[-1]
+                    last_ep_id = last_ep.get('episode_id', 'Unknown')
+                    st.metric("Latest Episode ID", last_ep_id)
+
+            st.warning("💡 **Note**: Full metrics will be available when evaluation completes or use running stats.")
+        else:
+            st.error("No debug data or episodes found")
 
 def main():
     # Sidebar navigation
@@ -451,18 +572,31 @@ def main():
                     episode_ids = [ep['episode_id'] for ep in episodes]
                     selected_episode = st.selectbox("Select Episode", episode_ids)
                     
-                    # Display experiment info
-                    st.markdown("---")
-                    st.markdown("**Experiment Info**")
-                    st.info(f"Total Episodes: {len(episodes)}")
+                    # # Display experiment info
+                    # st.markdown("---")
+                    # st.markdown("**Experiment Info**")
+                    # st.info(f"Total Episodes: {len(episodes)}")
                     
                     if experiment_data.get('stats'):
-                        success_count = sum(1 for m in experiment_data['stats'].values() 
-                                          if m.get('success', 0) == 1)
-                        oracle_success_count = sum(1 for m in experiment_data['stats'].values() 
-                                          if m.get('oracle_success', 0) == 1)
-                        st.info(f"Success Rate: {(success_count/len(episodes))*100:.1f}%")
-                        st.info(f"Oracle Success Rate: {(oracle_success_count/len(episodes))*100:.1f}%")
+                        stats_data = experiment_data['stats']
+
+                        # Check if stats_data is aggregated (single dict) or individual episodes (dict of dicts)
+                        if 'episodes_evaluated' in stats_data:
+                            # This is aggregated running stats
+                            success_rate = stats_data.get('success', 0) * 100
+                            oracle_success_rate = stats_data.get('oracle_success', 0) * 100
+                            episodes_eval = stats_data.get('episodes_evaluated', 0)
+                            st.info(f"Episodes Evaluated: {episodes_eval}")
+                            st.info(f"Success Rate: {success_rate:.1f}%")
+                            st.info(f"Oracle Success Rate: {oracle_success_rate:.1f}%")
+                        else:
+                            # This is individual episode data
+                            success_count = sum(1 for m in stats_data.values()
+                                              if m.get('success', 0) == 1)
+                            oracle_success_count = sum(1 for m in stats_data.values()
+                                              if m.get('oracle_success', 0) == 1)
+                            st.info(f"Success Rate: {(success_count/len(episodes))*100:.1f}%")
+                            st.info(f"Oracle Success Rate: {(oracle_success_count/len(episodes))*100:.1f}%")
                 else:
                     st.warning("No episodes found in debug.json")
             else:
@@ -485,7 +619,9 @@ def main():
         with tab2:
             display_experiment_summary(
                 experiment_data.get('debug', {}),
-                experiment_data.get('stats', {})
+                experiment_data.get('stats', {}),
+                experiment_data.get('episode_results', {}),
+                selected_episode
             )
     else:
         st.info("Select an experiment from the sidebar to begin visualization")

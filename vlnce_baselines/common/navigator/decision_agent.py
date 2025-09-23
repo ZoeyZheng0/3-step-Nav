@@ -134,17 +134,23 @@ class NavigationDecisionAgent:
     Agent that decides navigation strategy based on visual history.
     Implements the single-agent pattern using LangChain.
     """
-    
-    def __init__(self, llm_client, logger: Optional[logging.Logger] = None):
+
+    def __init__(self, llm_client, enabled_abilities=None, logger: Optional[logging.Logger] = None):
         """
         Initialize the decision agent with LangChain components.
-        
+
         Args:
             llm_client: LLM client for inference
+            enabled_abilities: List of enabled meta abilities (continue, stay, backtrack, look_around)
             logger: Optional logger instance
         """
         self.llm_client = llm_client
         self.logger = logger or logging.getLogger("DecisionAgent")
+
+        # Set enabled meta abilities
+        default_abilities = ["continue", "stay", "backtrack", "look_around"]
+        self.enabled_abilities = enabled_abilities if enabled_abilities is not None else default_abilities
+        self.logger.info(f"Enabled meta abilities: {self.enabled_abilities}")
         
         # Wrap LLM for LangChain compatibility
         self.llm = LangChainLLMWrapper(llm_client)
@@ -154,7 +160,7 @@ class NavigationDecisionAgent:
         
         # Create decision chain
         self.decision_chain = self._create_decision_chain()
-        
+
         # Create analysis tools
         self.tools = self._create_tools()
         
@@ -163,25 +169,13 @@ class NavigationDecisionAgent:
             memory_key="chat_history",
             return_messages=True
         )
-    
-    def _create_decision_chain(self) -> LLMChain:
-        """Create the main decision-making chain"""
-        
-        decision_template = """System: You are a navigation decision agent analyzing a sequence of images from a navigation path.
 
-Your role is to:
-1. Analyze whether the navigation is following the given instructions
-2. Assess confidence in the current progress
-3. Decide the next action: Continue, Stay, Backtrack, or Look Around
+    def _generate_examples_for_enabled_abilities(self) -> str:
+        """Generate in-context learning examples only for enabled abilities"""
+        examples = "## In-Context Learning Examples for Each Meta Ability:\n\n"
 
-You have access to tools that let you:
-- Read the actual implementation code of each navigation capability
-- Understand what each action does internally
-- Analyze the logic and side effects of each decision
-
-## In-Context Learning Examples for Each Meta Ability:
-
-### CONTINUE Examples (Move to next sub-instruction):
+        if "continue" in self.enabled_abilities:
+            examples += """### CONTINUE Examples (Move to next sub-instruction):
 Case 1: "Walk through the doorway" completed, next is "Turn left at the hallway"
 - Observation: Doorway successfully passed, now in a hallway with left/right options
 - Decision: Continue - doorway task achieved, move to hallway navigation
@@ -197,7 +191,10 @@ Case 3: "Exit the bedroom" completed, next is "Walk down the hallway to the kitc
 - Decision: Continue - bedroom exited, proceed with hallway navigation
 - Confidence: 9/10
 
-### STAY Examples (Continue with current instruction):
+"""
+
+        if "stay" in self.enabled_abilities:
+            examples += """### STAY Examples (Continue with current instruction):
 Case 1: "Go to the living room with the fireplace"
 - Observation: In a living room but no fireplace visible yet
 - Decision: Stay - correct room type but missing key landmark (fireplace)
@@ -213,7 +210,10 @@ Case 3: "Navigate to the end of the hallway"
 - Decision: Stay - still in progress toward hallway end
 - Confidence: 7/10
 
-### BACKTRACK Examples (Return to previous position):
+"""
+
+        if "backtrack" in self.enabled_abilities:
+            examples += """### BACKTRACK Examples (Return to previous position):
 Case 1: "Turn right at the intersection"
 - Observation: Turned left by mistake, wrong corridor
 - Decision: Backtrack - wrong turn taken, need to return to intersection
@@ -229,7 +229,10 @@ Case 3: "Go through the glass door"
 - Decision: Backtrack - incorrect door chosen, need to find glass door
 - Confidence: 9/10
 
-### LOOK AROUND Examples (Gather more information):
+"""
+
+        if "look_around" in self.enabled_abilities:
+            examples += """### LOOK AROUND Examples (Gather more information):
 Case 1: "Find the room with the piano"
 - Observation: At intersection with multiple room entrances, unclear which has piano
 - Decision: Look Around - need to check multiple viewpoints for piano visibility
@@ -245,12 +248,44 @@ Case 3: "Locate the staircase going down"
 - Decision: Look Around - scan environment comprehensively for stairs
 - Confidence: 5/10
 
+"""
+
+        return examples
+
+    def _create_decision_chain(self) -> LLMChain:
+        """Create the main decision-making chain"""
+
+        # Create list of available abilities for the prompt
+        abilities_list = []
+        for ability in self.enabled_abilities:
+            abilities_list.append(ability.title())
+        abilities_str = ", ".join(abilities_list)
+
+        # Generate examples for enabled abilities
+        examples_text = self._generate_examples_for_enabled_abilities()
+
+        decision_template = f"""System: You are a navigation decision agent analyzing a sequence of images from a navigation path.
+
+Your role is to:
+1. Analyze whether the navigation is following the given instructions
+2. Assess confidence in the current progress
+3. Decide the next action from these available options: {abilities_str}
+
+IMPORTANT: You can ONLY choose from these enabled abilities: {abilities_str}
+
+You have access to tools that let you:
+- Read the actual implementation code of each navigation capability
+- Understand what each action does internally
+- Analyze the logic and side effects of each decision
+
+{examples_text}
+
 Current Context:
-- Instruction: {instruction}
-- Actions completed: {actions_completed}
-- Current landmarks: {landmarks}
-- Navigation history: {history}
-- Number of images: {num_images}
+- Instruction: {{instruction}}
+- Actions completed: {{actions_completed}}
+- Current landmarks: {{landmarks}}
+- Navigation history: {{history}}
+- Number of images: {{num_images}}
 
 Available Capabilities (you can read their code using tools):
 - Continue: Move to next sub-instruction (resets history)
@@ -260,14 +295,14 @@ Available Capabilities (you can read their code using tools):
 
 Analyze the navigation sequence considering:
 - Visual continuity and logical progression
-- Landmark visibility and achievement  
+- Landmark visibility and achievement
 - Path correctness relative to instructions
 - Need for more information or correction
 - The actual implementation effects of each capability
 
 Use the in-context examples above to guide your decision-making process.
 
-{format_instructions}
+{{format_instructions}}
 
 User: Based on the visual sequence and understanding of capability implementations, what is your navigation decision?"""
         
@@ -859,37 +894,50 @@ Match your situation to the examples above.
         
         return decision, confidence, reasoning
     
-    def _apply_decision_rules(self, 
-                             decision: NavigationDecision, 
+    def _apply_decision_rules(self,
+                             decision: NavigationDecision,
                              confidence: float,
                              context: DecisionContext) -> NavigationDecision:
         """
         Apply rule-based adjustments to the decision.
-        
+
         Args:
             decision: Initial decision
             confidence: Confidence score
             context: Decision context
-            
+
         Returns:
             Adjusted decision
         """
-        # Low confidence -> Look around for more information
-        if confidence < 5:
+        # First, check if the decision is allowed by enabled abilities
+        decision_str = decision.value.lower().replace(" ", "_")
+        if decision_str not in self.enabled_abilities:
+            self.logger.info(f"Decision '{decision.value}' not in enabled abilities {self.enabled_abilities}")
+            # Fallback to first enabled ability
+            fallback_decision = self._string_to_decision(self.enabled_abilities[0])
+            self.logger.info(f"Falling back to {fallback_decision.value}")
+            decision = fallback_decision
+
+        # Low confidence -> Look around for more information (if enabled)
+        if confidence < 5 and "look_around" in self.enabled_abilities:
             self.logger.info(f"Low confidence ({confidence}), overriding to LOOK_AROUND")
             return NavigationDecision.LOOK_AROUND
-        
-        # If we're at the last action and decision is continue, change to stay
-        if (decision == NavigationDecision.CONTINUE and 
-            context.current_action_idx == context.total_actions - 1):
+        elif confidence < 5 and "stay" in self.enabled_abilities:
+            self.logger.info(f"Low confidence ({confidence}), LOOK_AROUND not available, using STAY")
+            return NavigationDecision.STAY
+
+        # If we're at the last action and decision is continue, change to stay (if enabled)
+        if (decision == NavigationDecision.CONTINUE and
+            context.current_action_idx == context.total_actions - 1 and
+            "stay" in self.enabled_abilities):
             self.logger.info("At last action, changing CONTINUE to STAY")
             return NavigationDecision.STAY
-        
-        # If no images yet, stay to gather more information
-        if len(context.chosen_images) < 2:
+
+        # If no images yet, stay to gather more information (if enabled)
+        if len(context.chosen_images) < 2 and "stay" in self.enabled_abilities:
             self.logger.info("Insufficient visual history, staying")
             return NavigationDecision.STAY
-        
+
         return decision
     
     def should_stop_navigation(self, 

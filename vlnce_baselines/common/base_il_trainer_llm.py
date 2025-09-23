@@ -494,18 +494,17 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 nav_logger.info("Loading actions and landmarks from cache")
 
             action_list = actions.split("\n")
-            nav_logger.info("Sub-instructions: "+str(action_list))
-            nav_logger.info("Landmarks: " + str(landmark_list))
 
             # Store sub-instructions and landmarks in episode_info for the first step
             if current_step == 0:  # First step after initialization
+                nav_logger.info("Sub-instructions: "+str(action_list))
+                nav_logger.info("Landmarks: " + str(landmark_list))
+
                 episode_info["sub_instructions"] = action_list
                 episode_info["landmarks"] = landmark_list
 
             # Use MAX_EPISODE_STEPS from config instead of hardcoded values
             step_length = self.config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
-            nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
-                            +"Current landmarks: "+str(landmark_list[current_action_idx]))
             
             stop_flag = False
             current_step += 1
@@ -522,6 +521,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 )
             
             images_dict, radius_dict, distance_dict = self.construct_image_dicts(batch_distances[-1], batch_angles, images_list)
+            if current_action_idx < len(action_list):
+                nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
+                                +"Current landmarks: "+str(landmark_list[current_action_idx]))
+
             nav_logger.info("========== Get Observation ==========")
             observation, observe_dict = navigator.observe_environment(nav_logger, current_step, images_dict)
             
@@ -544,18 +547,11 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     "is_chosen": False  # Will be updated after selection
                 }
             
-            nav_logger.info("========== Review History ==========")
-            history_traj = navigator.review_history(nav_logger, nav_history) if len(nav_history) > 0 else "Step 0 start position. "
+            if len(nav_history) == 0:
+                history_traj = "Step 0 start position. "
 
-            if not stop_flag:
-                if current_action_idx < len(action_list):
-                    nav_logger.info("Current sub-instruction: "+action_list[current_action_idx]
-                                    +"Current landmarks: "+str(landmark_list[current_action_idx]))
-                                
+            if not stop_flag:                               
                 nav_logger.info("========== Next Action Prediction ==========")
-                # predictions, thoughts, break_flag = navigator.move_to_next_vp(nav_logger, current_step, instruction, actions, landmarks, history_traj, estimation, observation, observe_dict)
-
-                # Determine next instruction - use 'Stop.' if current is the last instruction
                 if current_action_idx + 1 < len(action_list):
                     next_instruction = action_list[current_action_idx + 1]
                 else:
@@ -615,12 +611,9 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
                 nav_logger.info("========== Estimate Completion Progress ==========")
                 nav_logger.info(f"Completion estimation result: '{completion_estimation}'")
-
-                # Add estimation result to step data (between viewpoint images and GPT interaction)
                 step_data["estimation_result"] = completion_estimation
 
                 if completion_estimation == "Yes":
-                    # Use Decision Agent to determine next action
                     nav_logger.info("========== Navigation Decision Agent ==========")
                     
                     # Import the decision agent
@@ -630,8 +623,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                         NavigationDecision
                     )
                     
-                    # Initialize decision agent
-                    decision_agent = NavigationDecisionAgent(navigator.llm, nav_logger)
+                    # Initialize decision agent with enabled abilities from config
+                    enabled_abilities = getattr(config, 'NAVIGATION_AGENT', {}).get('ENABLED_META_ABILITIES',
+                                               ["continue", "stay", "backtrack", "look_around"])
+                    decision_agent = NavigationDecisionAgent(navigator.llm, enabled_abilities, nav_logger)
                     
                     # Prepare context for decision
                     actions_so_far = " ".join(action_list[:current_action_idx+1])
@@ -730,7 +725,6 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
                 elif completion_estimation == "No":
                     nav_logger.info("Instruction not yet completed - continuing with current instruction")
-                    # Skip decision agent visualization when estimation is "No"
                     nav_logger.info("Skipping decision agent visualization - continuing with standard navigation")
 
                 else:
@@ -813,7 +807,18 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     nDTW = np.exp(-dtw_distance / (len(gt_con_path) * config.TASK_CONFIG.TASK.SUCCESS_DISTANCE))
 
                     metric['ndtw'] = nDTW
-                    stats_episodes[current_episodes[i].episode_id] = metric 
+                    stats_episodes[current_episodes[i].episode_id] = metric
+
+                    # Find current episode debug info to save with results
+                    current_episode_debug = None
+                    episode_id_str = str(current_episodes[i].episode_id)
+                    for ep_info in debug_info["episodes"]:
+                        if str(ep_info.get("episode_id")) == episode_id_str:
+                            current_episode_debug = ep_info
+                            break
+
+                    # Save individual episode result immediately
+                    self._save_episode_result(current_episodes[i].episode_id, metric, config, current_episode_debug)
 
                     observations[i] = envs.reset_at(i)[0]
                     instruction, images_list = self.generate_input(observations[i])
@@ -930,7 +935,121 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         self.trajectories = gt_data
         trajectories = list(trajectories.keys())[self.config.local_rank::self.config.GPU_NUMBERS]
         return trajectories
-        
+
+    def _save_episode_result(self, episode_id, metric, config, debug_episode_info=None):
+        """Save individual episode result to JSON file immediately after evaluation."""
+        if not config.EVAL.SAVE_RESULTS:
+            return
+
+        # Create results directory if it doesn't exist
+        os.makedirs(config.RESULTS_DIR, exist_ok=True)
+
+        # Path for individual episode results
+        episode_results_file = os.path.join(
+            config.RESULTS_DIR,
+            f"episode_results_{config.TASK_CONFIG.DATASET.SPLIT}_r{self.local_rank}_w{self.world_size}.json"
+        )
+
+        # Load existing results or initialize empty dict
+        if os.path.exists(episode_results_file):
+            try:
+                with open(episode_results_file, "r") as f:
+                    episode_results = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                episode_results = {}
+        else:
+            episode_results = {}
+
+        # Add current episode result
+        episode_results[episode_id] = metric
+
+        # Save updated results
+        with open(episode_results_file, "w") as f:
+            json.dump(episode_results, f, indent=4)
+
+        # Also update aggregated stats file incrementally
+        self._update_aggregated_stats(episode_results, config)
+
+        # Update debug.json with episode information if provided
+        if debug_episode_info is not None:
+            self._update_debug_json(debug_episode_info, config)
+
+    def _update_aggregated_stats(self, episode_results, config):
+        """Update aggregated statistics file with current episode results."""
+        if not config.EVAL.SAVE_RESULTS:
+            return
+
+        split = config.TASK_CONFIG.DATASET.SPLIT
+        aggregated_file = os.path.join(
+            config.RESULTS_DIR,
+            f"stats_ckpt_{split}_running.json"
+        )
+
+        # Calculate aggregated stats from all episodes so far
+        num_episodes = len(episode_results)
+        if num_episodes == 0:
+            return
+
+        aggregated_stats = {}
+        for stat_key in next(iter(episode_results.values())).keys():
+            aggregated_stats[stat_key] = (
+                sum(v[stat_key] for v in episode_results.values())
+                / num_episodes
+            )
+
+        # Add episode count
+        aggregated_stats['episodes_evaluated'] = num_episodes
+
+        # Save aggregated stats
+        with open(aggregated_file, "w") as f:
+            json.dump(aggregated_stats, f, indent=4)
+
+    def _update_debug_json(self, debug_episode_info, config):
+        """Update debug.json file with episode information incrementally."""
+        if not config.EVAL.SAVE_RESULTS:
+            return
+
+        debug_file = os.path.join(
+            config.RESULTS_DIR,
+            "debug.json"
+        )
+
+        # Load existing debug data or initialize
+        if os.path.exists(debug_file):
+            try:
+                with open(debug_file, "r") as f:
+                    debug_data = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                debug_data = {
+                    "experiment_name": config.EVAL.SPLIT,
+                    "episodes": []
+                }
+        else:
+            debug_data = {
+                "experiment_name": config.EVAL.SPLIT,
+                "episodes": []
+            }
+
+        # Check if this episode already exists (update) or is new (append)
+        episode_id = debug_episode_info.get("episode_id")
+        existing_episode_idx = None
+
+        for idx, episode in enumerate(debug_data["episodes"]):
+            if episode.get("episode_id") == episode_id:
+                existing_episode_idx = idx
+                break
+
+        if existing_episode_idx is not None:
+            # Update existing episode
+            debug_data["episodes"][existing_episode_idx] = debug_episode_info
+        else:
+            # Add new episode
+            debug_data["episodes"].append(debug_episode_info)
+
+        # Save updated debug data
+        with open(debug_file, "w") as f:
+            json.dump(debug_data, f, indent=4)
+
     def eval(self) -> None:
         r"""Main method of trainer evaluation. 
 

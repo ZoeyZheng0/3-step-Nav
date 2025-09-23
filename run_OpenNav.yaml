@@ -14,6 +14,10 @@ EVAL:
   SPLIT: val_unseen
   EPISODE_COUNT: -1
 
+# Navigation Decision Agent Configuration
+NAVIGATION_AGENT:
+  ENABLED_META_ABILITIES: ["continue", "stay"]  # Available options: continue, stay, backtrack, look_around
+
 MODEL:
   policy_name: PolicyViewSelectionCMA
   spatial_output: False

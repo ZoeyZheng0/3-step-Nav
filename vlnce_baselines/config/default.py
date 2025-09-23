@@ -38,6 +38,12 @@ _C.EVAL.NONLEARNING.AGENT = "RandomAgent"
 _C.EVAL.OVERWRITE_RESULTS = True
 
 # -----------------------------------------------------------------------------
+# NAVIGATION AGENT CONFIG
+# -----------------------------------------------------------------------------
+_C.NAVIGATION_AGENT = CN()
+_C.NAVIGATION_AGENT.ENABLED_META_ABILITIES = ["continue", "stay", "backtrack", "look_around"]
+
+# -----------------------------------------------------------------------------
 # INFERENCE CONFIG
 # -----------------------------------------------------------------------------
 _C.INFERENCE = CN()
