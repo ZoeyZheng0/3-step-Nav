@@ -491,7 +491,6 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
             else:
                 actions = actions_cache[instruction]["actions"]
                 landmark_list = actions_cache[instruction]["landmark_list"]
-                nav_logger.info("Loading actions and landmarks from cache")
 
             action_list = actions.split("\n")
 

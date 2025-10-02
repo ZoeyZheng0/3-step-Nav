@@ -446,7 +446,7 @@ def display_experiment_summary(debug_data, stats_data, episode_results_data=None
                         episode_metrics = episode_results[str(selected_episode_id)]
 
                     if episode_metrics:
-                        st.markdown(f"#### Episode {selected_episode_id} - Performance Metrics")
+                        st.markdown(f"#### Episode {selected_episode_id}")
 
                         # Display metrics in the same layout as experiment summary
                         col1, col2, col3, col4 = st.columns(4)
