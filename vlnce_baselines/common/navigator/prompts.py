@@ -1,6 +1,15 @@
+# # Actions Decompsition
+# ACTION_DETECTION = {
+#     'system': "You are an action decomposition expert. Your task is to detect all actions in the given navigation instruction. You need to ensure the integrity of each action. Your answer must consist ONLY of a series of labled action phrases without begin sentence.",
+#     'user': "Can you decompose actions in the instruction \"{}\"? Actions: "
+# }
+
 # Actions Decompsition
 ACTION_DETECTION = {
-    'system': "You are an action decomposition expert. Your task is to detect all actions in the given navigation instruction. You need to ensure the integrity of each action. Your answer must consist ONLY of a series of labled action phrases without begin sentence.",
+    'system': "You are an action decomposition expert. Your task is to decompose the whole instruction into a series of sub-instructions and all actions in the given navigation instruction. You need to ensure the integrity of each action. You need to make sure the sub-instructions are complete, and include the details of the current environment if it is mentioned in the instruction. \
+                Your answer must consist ONLY of a series of labled action phrases without begin sentence. \
+                For each sub-instruction, it should involve at least one action, and all the description of the environment related to the same location. \
+                A typical answer should involved 3 to 8 sub-instructions.",
     'user': "Can you decompose actions in the instruction \"{}\"? Actions: "
 }
 
