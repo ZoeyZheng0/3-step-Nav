@@ -9,13 +9,13 @@ ACTION_DETECTION = {
     'system': "You are an action decomposition expert. Your task is to decompose the whole instruction into a series of sub-instructions and all actions in the given navigation instruction. You need to ensure the integrity of each action. You need to make sure the sub-instructions are complete, and include the details of the current environment if it is mentioned in the instruction. \
                 Your answer must consist ONLY of a series of labled action phrases without begin sentence. \
                 For each sub-instruction, it should involve at least one action, and all the description of the environment related to the same location. \
-                A typical answer should involved 3 to 8 sub-instructions.",
+                A typical answer should involve 3 to 8 sub-instructions.",
     'user': "Can you decompose actions in the instruction \"{}\"? Actions: "
 }
 
 # Landmarks Extraction
 LANDMARK_DETECTION = {
-    'system': "You are a landmark extraction expert. Your task is to detect all landmarks in the given navigation instruction. You need to ensure the integrity of each landmarks. Your answer must consist ONLY of a series of labled landmark phrases without other sentences.",
+    'system': "You are a landmark extraction expert. Your task is to detect all landmarks in the given navigation instruction. You need to ensure the integrity of each landmarks. Your answer must consist ONLY of a series of labeled landmark phrases without other sentences.",
     'user': "Can you extract landmarks in the instruction \"{}\"? Landmarks: "
 }
 
@@ -96,15 +96,15 @@ MAPGPT_NAVIGATOR = {
             You are encouraged to move to new viewpoints to explore environment while avoid revisiting accessed viewpoints in non-essential situations. \
             For each provided image of the places, you should combine the 'Instruction' and carefully examine the relevant information, such as scene descriptions, landmarks, and objects. You need to align 'Instruction' with 'History' (including corresponding images) to estimate your instruction execution progress. \
             If you can already see the destination, estimate the distance between you and it. If the distance is far, continue moving and try to stop within 1 meter of the destination. \
-            Your answer includes three parts: \"Thought\", \"Distance\", \"Prediction\" and \"Completion Estimation\". In the \"Thought\", you should think as detailed as possible following procedures: \
+            Your answer includes four parts: \"Thought\", \"Distance\", \"Prediction\" and \"Completion Estimation\". In the \"Thought\", you should think as detailed as possible following procedures: \
             (1) The viewpoint ID you predicted must be one of the Direction Viewpoint ID in Candidate Viewpoint IDs List. The Candidate Viewpoint IDs List show the Direction Viewpoint ID that you should go. This means that there should be only a number after \"Prediction\" without any other words or characters . \
             (2) Analyze which direction in the current environment is most suitable to execute the instruction and explain your reason. \
-            (3) You need to combine 'Instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images to think about what to do next and why, and complete your thinking into 'Thought'. \
-            (3) Predict moving to which direction viewpoint based on your thought process. \
-            (4) The \"Thought\" you predicted should be a single paragraph. \
-            (5) If you believe you have completed the instruction, you must still strictly follow the requirements to predict the next viewpoint in the \"Prediction\". \
-            (6) If you want to make a left turn, you usually need to select a viewpoint ID between 1 and 5. If you want to make a right turn, you usually need to select a viewpoint ID between 7 and 11. However, the viewpoint ID you predict must be within the Current Environment.\
-            (7) Your output after \"Prediction\" must be one of the number in Candidate Viewpoint IDs List without any other words. \
+            (3) You need to combine 'Instruction', 'Landmarks', your past 'Navigation History', 'Current Environment', and the provided images to think about what to do next, and complete your thinking into 'Thought'. \
+            (4) Predict moving to which direction viewpoint based on your thought process. \
+            (5) The \"Thought\" you predicted should be a single paragraph. \
+            (6) If you believe you have completed the instruction, you must still strictly follow the requirements to predict the next viewpoint in the \"Prediction\". \
+            (7) If you want to make a left turn, you usually need to select a viewpoint ID between 1 and 5. If you want to make a right turn, you usually need to select a viewpoint ID between 7 and 11. However, the viewpoint ID you predict must be within the Current Environment.\
+            (8) Your output after \"Prediction\" must be one of the number in Candidate Viewpoint IDs List without any other words. \
             Then, please make decision on the next viewpoint in the \"Prediction\". \
             Your decision is very important, must make it very carefully. \
             You need to double check the output in \"Prediction:\". The output must be in the Candidate Viewpoint IDs without any other words. \

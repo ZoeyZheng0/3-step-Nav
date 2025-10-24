@@ -104,10 +104,10 @@ def convert_rxr_to_r2r_format(rxr_episode, rxr_gt_episode, episode_id):
 
 def select_random_episodes(episodes_with_distances, num_episodes=100):
     """
-    Randomly select episodes from the available pool.
+    Randomly select episodes from the available pool, ensuring unique trajectory IDs.
 
     Args:
-        episodes_with_distances: List of (episode, distance) tuples
+        episodes_with_distances: List of ((idx, episode), distance) tuples
         num_episodes: Number of episodes to select (default 100)
 
     Returns:
@@ -115,16 +115,33 @@ def select_random_episodes(episodes_with_distances, num_episodes=100):
     """
     print(f"\nTotal available English episodes: {len(episodes_with_distances)}")
 
-    # Adjust if not enough episodes
-    if len(episodes_with_distances) < num_episodes:
-        print(f"  WARNING: Only {len(episodes_with_distances)} episodes available, wanted {num_episodes}")
-        num_episodes = len(episodes_with_distances)
+    # Group by trajectory_id to find unique trajectories
+    trajectory_groups = {}
+    for (idx, episode), distance in episodes_with_distances:
+        traj_id = episode['trajectory_id']
+        if traj_id not in trajectory_groups:
+            trajectory_groups[traj_id] = []
+        trajectory_groups[traj_id].append(((idx, episode), distance))
 
-    # Randomly sample episodes
+    print(f"Unique trajectory IDs: {len(trajectory_groups)}")
+
+    # For each trajectory, randomly pick one episode (in case multiple instructions exist)
     random.seed(42)
-    selected = random.sample(episodes_with_distances, num_episodes)
+    unique_episodes = []
+    for traj_id, episodes in trajectory_groups.items():
+        # Randomly select one episode from this trajectory
+        chosen = random.choice(episodes)
+        unique_episodes.append(chosen)
 
-    print(f"Randomly selected {len(selected)} episodes")
+    # Check if we have enough unique trajectories
+    if len(unique_episodes) < num_episodes:
+        print(f"  WARNING: Only {len(unique_episodes)} unique trajectories available, wanted {num_episodes}")
+        num_episodes = len(unique_episodes)
+
+    # Randomly sample from unique trajectories
+    selected = random.sample(unique_episodes, num_episodes)
+
+    print(f"Randomly selected {len(selected)} episodes with unique trajectory IDs")
 
     # Return only episodes (not distances)
     return [ep for ep, _ in selected]

@@ -421,6 +421,9 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         chosen_images = []
         chosen_images_descriptions = []  # Descriptions for each image
         env_actions_history = []  # Record environment actions for backtracking
+        previous_position = None  # Track previous position to detect if stuck
+        stuck_directions = set()  # Track directions that caused the agent to get stuck
+        last_chosen_vp = None  # Track the last chosen viewpoint
         
         # Initialize debug info for visualization
         debug_info = {
@@ -556,7 +559,21 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 else:
                     next_instruction = 'Stop.'
 
-                next_vp, thought, completion_estimation, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, observe_dict, images_dict, next_instruction)
+                # Filter out stuck directions from available observations
+                filtered_observe_dict = {k: v for k, v in observe_dict.items() if k not in stuck_directions}
+                filtered_images_dict = {k: v for k, v in images_dict.items() if k not in stuck_directions}
+
+                if len(filtered_observe_dict) == 0:
+                    nav_logger.error("All directions are stuck! Using original observations.")
+                    filtered_observe_dict = observe_dict
+                    filtered_images_dict = images_dict
+                else:
+                    nav_logger.info(f"Filtered out {len(stuck_directions)} stuck directions: {stuck_directions}")
+
+                next_vp, thought, completion_estimation, gpt_interaction = navigator.move_to_next_vp_single(nav_logger, action_list[current_action_idx], landmark_list[current_action_idx], history_traj, observation, filtered_observe_dict, filtered_images_dict, next_instruction)
+
+                # Track the chosen viewpoint
+                last_chosen_vp = next_vp
 
                 # Update step data with chosen viewpoint and GPT interaction
                 step_data["chosen_viewpoint"] = next_vp
@@ -571,8 +588,11 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 curr_observe = observe_dict[next_vp]
                 nav_logger.info("========== save history ==========")
                 nav_history = navigator.save_history(nav_logger, current_step, next_vp, thought, curr_observe, nav_history)
+
+                # Only add image if not stuck (will be determined after env.step)
+                # For now, we'll add it and potentially remove it later if stuck
                 chosen_images.append(images_dict[next_vp]['rgb'].copy())
-                
+
                 # Add description for this image
                 angle_deg = np.rad2deg(radius_dict[next_vp]) if next_vp in radius_dict else 0
                 direction_desc = ""
@@ -669,6 +689,9 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                             current_action_idx += 1
                             nav_history = []
                             history_traj = "Step 0 start position. "
+                            # Clear stuck directions when moving to new instruction
+                            stuck_directions.clear()
+                            nav_logger.info("Cleared stuck directions for new sub-instruction")
                         else:
                             nav_logger.info("Completed all sub-instructions")
                             stop_flag = True
@@ -742,18 +765,61 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     # Record the action for potential backtracking
                     env_actions_history.append(env_actions[0])
                     outputs = envs.step(env_actions)
-                    
+
                     observations, _, dones, infos = [list(x) for x in zip(*outputs)]
                     instruction, images_list = self.generate_input(observations[-1])
-                    # finish navigation
+
+                    # Check if agent is stuck (position hasn't changed)
+                    is_stuck = False
                     if current_step == step_length:
-                        dones[0] = True 
+                        dones[0] = True
                     else:
                         for j, ob in enumerate(observations):
-                            envs.call_at(j, 
+                            new_positions = ob.pop('positions')
+                            new_collisions = ob.pop('collisions')
+
+                            # Check if stuck: compare current position with previous position
+                            if previous_position is not None and len(new_positions) > 0:
+                                current_position = new_positions[-1]
+                                position_diff = np.linalg.norm(np.array(current_position) - np.array(previous_position))
+
+                                if position_diff < 0.1:  # Threshold: if moved less than 0.1 meters, consider stuck
+                                    is_stuck = True
+                                    nav_logger.warning(f"Agent is STUCK! Position changed by only {position_diff:.4f}m")
+                                    nav_logger.warning(f"Previous position: {previous_position}")
+                                    nav_logger.warning(f"Current position: {current_position}")
+
+                                    # Add the stuck direction to the blacklist
+                                    if last_chosen_vp is not None:
+                                        stuck_directions.add(last_chosen_vp)
+                                        nav_logger.warning(f"Added direction '{last_chosen_vp}' to stuck directions blacklist")
+                                        nav_logger.warning(f"Total stuck directions: {stuck_directions}")
+
+                                    # Remove the last added image and description since we're stuck
+                                    if len(chosen_images) > 0:
+                                        removed_img = chosen_images.pop()
+                                        nav_logger.warning(f"Removed stuck observation image (total images now: {len(chosen_images)})")
+                                    if len(chosen_images_descriptions) > 0:
+                                        removed_desc = chosen_images_descriptions.pop()
+                                        nav_logger.warning(f"Removed stuck image description: {removed_desc}")
+
+                                    # Also remove from nav_history since this movement failed
+                                    if len(nav_history) > 0:
+                                        nav_history.pop()
+                                        nav_logger.warning("Removed last navigation history entry due to stuck")
+                                else:
+                                    nav_logger.info(f"Agent moved {position_diff:.4f}m successfully")
+
+                                # Update previous position
+                                previous_position = current_position
+                            elif len(new_positions) > 0:
+                                # First movement, just record position
+                                previous_position = new_positions[-1]
+
+                            envs.call_at(j,
                                 'change_current_path',
-                                {'new_path': ob.pop('positions'),
-                                'collisions': ob.pop('collisions')}
+                                {'new_path': new_positions,
+                                'collisions': new_collisions}
                             )
                 else:
                     dones[0] = True
@@ -774,7 +840,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     chosen_images_descriptions = []
                     env_actions_history = []
                     backtrack_flag = False
-                    
+                    previous_position = None  # Reset position tracking for new episode
+                    stuck_directions = set()  # Reset stuck directions for new episode
+                    last_chosen_vp = None  # Reset last chosen viewpoint for new episode
+
                     # Add initial image for new episode
                     if '0' in images_list:
                         chosen_images.append(images_list['0']['rgb'].copy())
