@@ -424,6 +424,18 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         previous_position = None  # Track previous position to detect if stuck
         stuck_directions = set()  # Track directions that caused the agent to get stuck
         last_chosen_vp = None  # Track the last chosen viewpoint
+
+        # Step-level statistics for current episode
+        episode_step_latencies = []  # List of latencies for each step in current episode
+        episode_step_input_tokens = []  # List of input tokens for each step
+        episode_step_output_tokens = []  # List of output tokens for each step
+        step_start_time = None  # Track start time of current step
+
+        # Global statistics across all episodes (for computing overall average)
+        global_total_latency = 0.0
+        global_total_input_tokens = 0
+        global_total_output_tokens = 0
+        global_total_steps = 0
         
         # Initialize debug info for visualization
         debug_info = {
@@ -507,9 +519,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
             # Use MAX_EPISODE_STEPS from config instead of hardcoded values
             step_length = self.config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
-            
+
             stop_flag = False
             current_step += 1
+
+            # Record step start time and reset LLM token accumulator
+            step_start_time = time.time()
+            navigator.llm.reset_step_tokens()
+
             nav_logger.info(f"-------------------- Step {current_step} --------------------")
             with torch.no_grad():
                 # candidate waypoints prediction
@@ -580,10 +597,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 step_data["gpt_interaction"] = gpt_interaction
                 if next_vp in step_data["viewpoints"]:
                     step_data["viewpoints"][next_vp]["is_chosen"] = True
-                
+
                 # Add step data to episode info
                 episode_info["steps"].append(step_data)
-                
+
                 # Save history
                 curr_observe = observe_dict[next_vp]
                 nav_logger.info("========== save history ==========")
@@ -766,6 +783,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     env_actions_history.append(env_actions[0])
                     outputs = envs.step(env_actions)
 
+                    # Step completed - record step statistics
+                    step_latency = time.time() - step_start_time
+                    step_tokens = navigator.llm.get_step_tokens()
+                    episode_step_latencies.append(step_latency)
+                    episode_step_input_tokens.append(step_tokens['input_tokens'])
+                    episode_step_output_tokens.append(step_tokens['output_tokens'])
+                    nav_logger.info(f"Step {current_step} stats: latency={step_latency:.2f}s, input_tokens={step_tokens['input_tokens']}, output_tokens={step_tokens['output_tokens']}")
+
                     observations, _, dones, infos = [list(x) for x in zip(*outputs)]
                     instruction, images_list = self.generate_input(observations[-1])
 
@@ -875,6 +900,38 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                     nDTW = np.exp(-dtw_distance / (len(gt_con_path) * config.TASK_CONFIG.TASK.SUCCESS_DISTANCE))
 
                     metric['ndtw'] = nDTW
+
+                    # Calculate episode-level step statistics (average per step for this episode)
+                    if len(episode_step_latencies) > 0:
+                        metric['avg_latency_per_step'] = sum(episode_step_latencies) / len(episode_step_latencies)
+                        metric['avg_input_tokens_per_step'] = sum(episode_step_input_tokens) / len(episode_step_input_tokens)
+                        metric['avg_output_tokens_per_step'] = sum(episode_step_output_tokens) / len(episode_step_output_tokens)
+                        metric['total_latency'] = sum(episode_step_latencies)
+                        metric['total_input_tokens'] = sum(episode_step_input_tokens)
+                        metric['total_output_tokens'] = sum(episode_step_output_tokens)
+
+                        # Update global statistics for overall average calculation
+                        global_total_latency += sum(episode_step_latencies)
+                        global_total_input_tokens += sum(episode_step_input_tokens)
+                        global_total_output_tokens += sum(episode_step_output_tokens)
+                        global_total_steps += len(episode_step_latencies)
+
+                        nav_logger.info(f"Episode stats: avg_latency={metric['avg_latency_per_step']:.2f}s/step, "
+                                       f"avg_input_tokens={metric['avg_input_tokens_per_step']:.0f}/step, "
+                                       f"avg_output_tokens={metric['avg_output_tokens_per_step']:.0f}/step")
+                    else:
+                        metric['avg_latency_per_step'] = 0.0
+                        metric['avg_input_tokens_per_step'] = 0
+                        metric['avg_output_tokens_per_step'] = 0
+                        metric['total_latency'] = 0.0
+                        metric['total_input_tokens'] = 0
+                        metric['total_output_tokens'] = 0
+
+                    # Reset episode-level statistics for next episode
+                    episode_step_latencies = []
+                    episode_step_input_tokens = []
+                    episode_step_output_tokens = []
+
                     stats_episodes[current_episodes[i].episode_id] = metric
 
                     # Find current episode debug info to save with results
@@ -885,8 +942,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                             current_episode_debug = ep_info
                             break
 
-                    # Save individual episode result immediately
-                    self._save_episode_result(current_episodes[i].episode_id, metric, config, current_episode_debug)
+                    # Save individual episode result immediately (includes global averages)
+                    self._save_episode_result(current_episodes[i].episode_id, metric, config, current_episode_debug,
+                                             global_total_latency, global_total_input_tokens,
+                                             global_total_output_tokens, global_total_steps)
 
                     observations[i] = envs.reset_at(i)[0]
                     instruction, images_list = self.generate_input(observations[i])
@@ -1004,7 +1063,9 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         trajectories = list(trajectories.keys())[self.config.local_rank::self.config.GPU_NUMBERS]
         return trajectories
 
-    def _save_episode_result(self, episode_id, metric, config, debug_episode_info=None):
+    def _save_episode_result(self, episode_id, metric, config, debug_episode_info=None,
+                             global_total_latency=0.0, global_total_input_tokens=0,
+                             global_total_output_tokens=0, global_total_steps=0):
         """Save individual episode result to JSON file immediately after evaluation."""
         if not config.EVAL.SAVE_RESULTS:
             return
@@ -1035,14 +1096,18 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         with open(episode_results_file, "w") as f:
             json.dump(episode_results, f, indent=4)
 
-        # Also update aggregated stats file incrementally
-        self._update_aggregated_stats(episode_results, config)
+        # Also update aggregated stats file incrementally (with global step statistics)
+        self._update_aggregated_stats(episode_results, config,
+                                      global_total_latency, global_total_input_tokens,
+                                      global_total_output_tokens, global_total_steps)
 
         # Update debug.json with episode information if provided
         if debug_episode_info is not None:
             self._update_debug_json(debug_episode_info, config)
 
-    def _update_aggregated_stats(self, episode_results, config):
+    def _update_aggregated_stats(self, episode_results, config,
+                                 global_total_latency=0.0, global_total_input_tokens=0,
+                                 global_total_output_tokens=0, global_total_steps=0):
         """Update aggregated statistics file with current episode results."""
         if not config.EVAL.SAVE_RESULTS:
             return
@@ -1058,8 +1123,14 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         if num_episodes == 0:
             return
 
+        # Keys to exclude from episode-level averaging (step-level stats handled separately)
+        step_level_keys = {'avg_latency_per_step', 'avg_input_tokens_per_step', 'avg_output_tokens_per_step',
+                          'total_latency', 'total_input_tokens', 'total_output_tokens'}
+
         aggregated_stats = {}
         for stat_key in next(iter(episode_results.values())).keys():
+            if stat_key in step_level_keys:
+                continue
             aggregated_stats[stat_key] = (
                 sum(v[stat_key] for v in episode_results.values())
                 / num_episodes
@@ -1067,6 +1138,13 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
 
         # Add episode count
         aggregated_stats['episodes_evaluated'] = num_episodes
+
+        # Add global step-level statistics (average across ALL steps from ALL episodes)
+        if global_total_steps > 0:
+            aggregated_stats['global_avg_latency_per_step'] = global_total_latency / global_total_steps
+            aggregated_stats['global_avg_input_tokens_per_step'] = global_total_input_tokens / global_total_steps
+            aggregated_stats['global_avg_output_tokens_per_step'] = global_total_output_tokens / global_total_steps
+            aggregated_stats['global_total_steps'] = global_total_steps
 
         # Save aggregated stats
         with open(aggregated_file, "w") as f:

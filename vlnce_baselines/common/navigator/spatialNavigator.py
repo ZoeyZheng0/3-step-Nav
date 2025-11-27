@@ -35,7 +35,7 @@ class Open_Nav():
     # ===================================
     # ===== Progress Estimation =========
     # ===================================
-    def save_history(self, logger, current_step, next_vp, thought, curr_observe, nav_history): 
+    def save_history(self, logger, current_step, next_vp, thought, curr_observe, nav_history):
         # ===== get obervation summary =====
         direction_id = int(curr_observe.split("Direction Viewpoint")[0].replace("Direction","").strip())
         direction = DIRECTIONS[direction_id]
@@ -269,7 +269,7 @@ class Open_Nav():
         logger.info(f"Instruction: {instruction} \nLength of chosen images: {len(chosen_images)} \n{response}")
 
         response = response.replace("**", "")
-        
+
         # Extract confidence score
         confidence = 5  # Default confidence
         if "Confidence:" in response:
@@ -279,7 +279,7 @@ class Open_Nav():
                 confidence = max(0, min(10, confidence))  # Clamp between 0-10
             except:
                 logger.error(f"Could not parse confidence score, using default: 5")
-        
+
         if "Judgement:" not in response:
             logger.error(f"No Judgement in response")
             return "Yes", confidence, "None", judge_interaction

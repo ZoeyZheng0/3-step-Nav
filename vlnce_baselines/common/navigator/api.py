@@ -1,6 +1,7 @@
 from openai import OpenAI
 import torch
 import numpy as np
+import time
 
 import sys
 import os
@@ -32,7 +33,7 @@ class llmClient:
     def __init__(self, model_type = '', api_key=None, base_url=None):
         '''
         Initialize LLM client based on model type and API key.
-        
+
         Args:
             model_type (str): Either "gpt" or "opensource"
             api_key (str): API key for OpenAI (if using GPT)
@@ -50,17 +51,39 @@ class llmClient:
             )
         else:
             raise ValueError(f"Unknown model type: {model_type}. Use 'gpt' or 'opensource'.")
-        
+
+        # Token usage accumulator for step-level tracking
+        self._step_input_tokens = 0
+        self._step_output_tokens = 0
+
         print(f"Initialized LLM client with model: {self.model}")
 
     def set_model(self, model):
         self.model = model
 
+    def reset_step_tokens(self):
+        """Reset step-level token counters"""
+        self._step_input_tokens = 0
+        self._step_output_tokens = 0
+
+    def get_step_tokens(self):
+        """Get accumulated tokens for current step"""
+        return {
+            'input_tokens': self._step_input_tokens,
+            'output_tokens': self._step_output_tokens
+        }
+
+    def _accumulate_tokens(self, usage):
+        """Accumulate tokens from API response"""
+        if usage:
+            self._step_input_tokens += usage.prompt_tokens
+            self._step_output_tokens += usage.completion_tokens
+
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def _completion_with_backoff(self, **kwargs):
         return self.client.chat.completions.create(**kwargs)
 
-    def gpt_infer(self, system_prompt, user_prompt, num_output=1):
+    def gpt_infer(self, system_prompt, user_prompt, num_output=1, return_usage=False):
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -73,20 +96,44 @@ class llmClient:
 
         # Only add temperature for models that support it
         if self.model != "gpt-5-2025-08-07":
-            request_params["temperature"] = 0       
-        
+            request_params["temperature"] = 0
+
         if num_output == 1:
+            start_time = time.time()
             chat_response = self._completion_with_backoff(**request_params)
+            latency = time.time() - start_time
             answer = chat_response.choices[0].message.content
+
+            # Always accumulate tokens for step-level tracking
+            self._accumulate_tokens(chat_response.usage)
+
+            if return_usage:
+                usage = {
+                    'latency': latency,
+                    'input_tokens': chat_response.usage.prompt_tokens,
+                    'output_tokens': chat_response.usage.completion_tokens
+                }
+                return answer, usage
             return answer
         else:
             responses = []
+            total_usage = {'latency': 0, 'input_tokens': 0, 'output_tokens': 0}
             for _ in range(num_output):
+                start_time = time.time()
                 chat_response = self._completion_with_backoff(**request_params)
+                total_usage['latency'] += time.time() - start_time
+                total_usage['input_tokens'] += chat_response.usage.prompt_tokens
+                total_usage['output_tokens'] += chat_response.usage.completion_tokens
                 responses.append(chat_response.choices[0].message.content)
+
+                # Always accumulate tokens for step-level tracking
+                self._accumulate_tokens(chat_response.usage)
+
+            if return_usage:
+                return responses, total_usage
             return responses
 
-    def gpt_infer_with_images(self, system_prompt, user_prompt, images, num_output=1):
+    def gpt_infer_with_images(self, system_prompt, user_prompt, images, num_output=1, return_usage=False):
         user_content = []
 
         # Add user prompt to the prompt
@@ -95,7 +142,7 @@ class llmClient:
             "type": "text",
             "text": user_prompt
             }
-        )  
+        )
 
         # Add images to the prompt
         for i, image_dict in images.items():
@@ -130,7 +177,7 @@ class llmClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ]
-        
+
         request_params = {
             "model": self.model,
             "messages": messages,
@@ -143,12 +190,31 @@ class llmClient:
         if num_output == 1:
             chat_response = self._completion_with_backoff(**request_params)
             answer = chat_response.choices[0].message.content
+
+            # Always accumulate tokens for step-level tracking
+            self._accumulate_tokens(chat_response.usage)
+
+            if return_usage:
+                usage = {
+                    'input_tokens': chat_response.usage.prompt_tokens,
+                    'output_tokens': chat_response.usage.completion_tokens
+                }
+                return answer, usage
             return answer
         else:
             responses = []
+            total_usage = {'input_tokens': 0, 'output_tokens': 0}
             for _ in range(num_output):
                 chat_response = self._completion_with_backoff(**request_params)
+                total_usage['input_tokens'] += chat_response.usage.prompt_tokens
+                total_usage['output_tokens'] += chat_response.usage.completion_tokens
                 responses.append(chat_response.choices[0].message.content)
+
+                # Always accumulate tokens for step-level tracking
+                self._accumulate_tokens(chat_response.usage)
+
+            if return_usage:
+                return responses, total_usage
             return responses
 
 

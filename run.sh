@@ -2,7 +2,7 @@
 
 ## Full dataset
 episodes_to_load=100
-exp_name="eval"
+exp_name="r2r_gpt5"
 gpu_id=2
 
 # ## Debug
