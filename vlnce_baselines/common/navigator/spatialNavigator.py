@@ -161,8 +161,15 @@ class Open_Nav():
         logger.info(decision_reasoning)
 
         # Parse the unified response with completion estimation
-        pred_thought = decision_reasoning.split("Prediction:")[0].strip()
-        remaining_text = decision_reasoning.split("Prediction:")[1].strip()
+        # Use the LAST "Prediction:" to handle models that output multiple predictions in thinking
+        prediction_parts = decision_reasoning.split("Prediction:")
+        if len(prediction_parts) > 1:
+            # Everything before the last "Prediction:" is the thought
+            pred_thought = "Prediction:".join(prediction_parts[:-1]).strip()
+            remaining_text = prediction_parts[-1].strip()
+        else:
+            pred_thought = ""
+            remaining_text = decision_reasoning.strip()
 
         # Extract prediction and completion estimation
         if "Completion Estimation:" in remaining_text:
@@ -171,6 +178,18 @@ class Open_Nav():
         else:
             pred_vp = remaining_text.replace("\"","").replace("'","").replace("\n","").replace(".","").replace("*","")
             completion_est = "Unknown"
+
+        # Extract numeric viewpoint ID from prediction (handles verbose LLM responses)
+        # Look for patterns like "Direction 9", "Viewpoint 9", or just a number
+        numeric_match = re.search(r'(?:Direction|Viewpoint)?\s*(\d+)', pred_vp)
+        if numeric_match:
+            pred_vp = numeric_match.group(1)
+        else:
+            # If no number found, log warning and try to extract any digit
+            logger.warning(f"Could not extract viewpoint ID from prediction: {pred_vp[:100]}...")
+            digit_match = re.search(r'\d+', pred_vp)
+            if digit_match:
+                pred_vp = digit_match.group()
 
         return pred_vp, pred_thought, completion_est, gpt_interaction
     
