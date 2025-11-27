@@ -1123,6 +1123,10 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         if num_episodes == 0:
             return
 
+        # Helper function to check if a value is valid (not NaN or Infinity)
+        def is_valid_number(x):
+            return x is not None and not math.isnan(x) and not math.isinf(x)
+
         # Keys to exclude from episode-level averaging (step-level stats handled separately)
         step_level_keys = {'avg_latency_per_step', 'avg_input_tokens_per_step', 'avg_output_tokens_per_step',
                           'total_latency', 'total_input_tokens', 'total_output_tokens'}
@@ -1131,10 +1135,12 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         for stat_key in next(iter(episode_results.values())).keys():
             if stat_key in step_level_keys:
                 continue
-            aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in episode_results.values())
-                / num_episodes
-            )
+            # Filter out invalid values (NaN, Infinity)
+            valid_values = [v[stat_key] for v in episode_results.values() if is_valid_number(v[stat_key])]
+            if len(valid_values) > 0:
+                aggregated_stats[stat_key] = sum(valid_values) / len(valid_values)
+            else:
+                aggregated_stats[stat_key] = 0.0  # Default to 0 if no valid values
 
         # Add episode count
         aggregated_stats['episodes_evaluated'] = num_episodes
