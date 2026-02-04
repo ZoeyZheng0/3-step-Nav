@@ -381,7 +381,28 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
                 config.EVAL.EPISODE_COUNT, sum(envs.number_of_episodes)
             )
 
+        # ========== Resume from checkpoint: Load completed episodes ==========
+        completed_episode_ids = set()
+        episode_results_file = os.path.join(
+            config.RESULTS_DIR,
+            f"episode_results_{config.TASK_CONFIG.DATASET.SPLIT}_r{self.local_rank}_w{self.world_size}.json"
+        )
+        if os.path.exists(episode_results_file):
+            try:
+                with open(episode_results_file, "r") as f:
+                    existing_results = json.load(f)
+                completed_episode_ids = set(existing_results.keys())
+                # Convert to int if needed (episode_ids might be stored as strings)
+                completed_episode_ids = {int(ep_id) if ep_id.isdigit() else ep_id for ep_id in completed_episode_ids}
+                print(f"[Resume] Found {len(completed_episode_ids)} completed episodes: {sorted(completed_episode_ids)}")
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                print(f"[Resume] Could not load existing results: {e}")
+                completed_episode_ids = set()
+
         pbar = tqdm.tqdm(total=episodes_to_eval) if config.use_pbar else None
+        # Update progress bar if resuming
+        if pbar is not None and len(completed_episode_ids) > 0:
+            pbar.update(len(completed_episode_ids))
         log_str = (
             " [Episodes evaluated: {evaluated}/{total}]"
             " [Time elapsed (s): {time}]"
@@ -436,6 +457,26 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         global_total_input_tokens = 0
         global_total_output_tokens = 0
         global_total_steps = 0
+
+        # ========== Resume: Load existing global statistics ==========
+        if len(completed_episode_ids) > 0:
+            running_stats_file = os.path.join(
+                config.RESULTS_DIR,
+                f"stats_ckpt_{config.TASK_CONFIG.DATASET.SPLIT}_running.json"
+            )
+            if os.path.exists(running_stats_file):
+                try:
+                    with open(running_stats_file, "r") as f:
+                        running_stats = json.load(f)
+                    # Recover global statistics from running stats
+                    if 'global_total_steps' in running_stats and running_stats['global_total_steps'] > 0:
+                        global_total_steps = running_stats['global_total_steps']
+                        global_total_latency = running_stats.get('global_avg_latency_per_step', 0) * global_total_steps
+                        global_total_input_tokens = int(running_stats.get('global_avg_input_tokens_per_step', 0) * global_total_steps)
+                        global_total_output_tokens = int(running_stats.get('global_avg_output_tokens_per_step', 0) * global_total_steps)
+                        print(f"[Resume] Loaded global stats: {global_total_steps} steps, {global_total_latency:.2f}s total latency")
+                except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
+                    print(f"[Resume] Could not load global statistics: {e}")
         
         # Initialize debug info for visualization
         debug_info = {
@@ -451,8 +492,43 @@ class BaseVLNCETrainerLLM(BaseILTrainer):
         
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
+
+            # ========== Resume: Skip already completed episodes ==========
+            current_ep_id = current_episodes[0].episode_id
+            if current_ep_id in completed_episode_ids or str(current_ep_id) in completed_episode_ids:
+                print(f"[Resume] Skipping already completed episode {current_ep_id}")
+                # Mark as done and reset to next episode
+                stats_episodes[current_ep_id] = None  # Placeholder to track skipped episodes
+                observations[0] = envs.reset_at(0)[0]
+                instruction, images_list = self.generate_input(observations[0])
+                observations = extract_instruction_tokens(
+                    observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID
+                )
+                batch = batch_obs(observations, self.device)
+                batch = apply_obs_transforms_batch(batch, obs_transforms)
+
+                # Reset episode-level variables
+                current_step = 0
+                current_action_idx = 0
+                nav_history = []
+                chosen_images = []
+                chosen_images_descriptions = []
+                env_actions_history = []
+                previous_position = None
+                stuck_directions = set()
+                last_chosen_vp = None
+                episode_step_latencies = []
+                episode_step_input_tokens = []
+                episode_step_output_tokens = []
+
+                # Add initial image for next episode
+                if '0' in images_list:
+                    chosen_images.append(images_list['0']['rgb'].copy())
+                    chosen_images_descriptions.append("Initial position: Agent standing at start point looking forward")
+                continue
+
             positions = []; headings = []
-            for ob_i in range(len(current_episodes)): 
+            for ob_i in range(len(current_episodes)):
                 agent_state_i = envs.call_at(ob_i,
                         "get_agent_info", {})
                 positions.append(agent_state_i['position'])

@@ -43,11 +43,17 @@ class llmClient:
             self.model = model_type
             self.client = OpenAI(api_key=api_key)
 
-        elif model_type in ["Qwen/Qwen2-72B", "llama3.2-vision:90b"]:
+        elif model_type in ["llama3.2-vision:90b"]:
             self.model = model_type
             self.client = OpenAI(
                 api_key="not-needed",  # This value doesn't matter for local deployment
                 base_url="http://192.168.0.15:11434/v1"
+            )
+        elif model_type in ["Qwen/Qwen2-72B", "qwen3-vl:32b", "qwen2.5vl:72b"]:
+            self.model = model_type
+            self.client = OpenAI(
+                api_key="not-needed",
+                base_url="http://192.168.0.5:11434/v1"
             )
         else:
             raise ValueError(f"Unknown model type: {model_type}. Use 'gpt' or 'opensource'.")
